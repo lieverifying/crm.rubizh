@@ -208,9 +208,9 @@ export type Order = OrderSummary & {
   lines: unknown[];
   parcels: unknown[];
   finance: Record<string, unknown> | null;
-  notes?: unknown[];
-  history?: unknown[];
-  tasks?: unknown[];
+  notes: unknown[];
+  history: unknown[];
+  tasks: unknown[];
 };
 
 export type OrderList = {
