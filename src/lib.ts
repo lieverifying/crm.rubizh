@@ -23,7 +23,13 @@ export const setStepUpHandler = (h: StepUpHandler | null) => {
 
 export const newKey = () => crypto.randomUUID().replaceAll("-", "");
 
-type Options = { idem?: string; signal?: AbortSignal; method?: string };
+type Options = {
+  idem?: string;
+  signal?: AbortSignal;
+  method?: string;
+  /** internal: the step-up re-entry already ran for this attempt */
+  steppedUp?: boolean;
+};
 
 /**
  * One request to /api/staff. Mutations carry the CSRF token and the per-attempt Idempotency-Key.
@@ -82,8 +88,13 @@ export async function api<T>(
     code: "SERVICE_UNAVAILABLE",
     message: t.serviceUnavailable,
   };
-  if (e.code === "STEP_UP_REQUIRED" && stepUp && (await stepUp()))
-    return api<T>(path, body, opts);
+  if (
+    e.code === "STEP_UP_REQUIRED" &&
+    !opts.steppedUp &&
+    stepUp &&
+    (await stepUp())
+  )
+    return api<T>(path, body, { ...opts, steppedUp: true });
   if (
     response.status === 401 &&
     e.code === "AUTH_REQUIRED" &&
@@ -99,7 +110,11 @@ export async function api<T>(
 }
 
 /** Download a CSV export (same session); returns false when the server refused. */
-export async function download(path: string, body?: unknown): Promise<void> {
+export async function download(
+  path: string,
+  body?: unknown,
+  steppedUp = false,
+): Promise<void> {
   const method = body === undefined ? "GET" : "POST";
   const r = await fetch("/api/staff" + path, {
     method,
@@ -116,8 +131,13 @@ export async function download(path: string, body?: unknown): Promise<void> {
   });
   if (!r.ok) {
     const j = await r.json().catch(() => null);
-    if (j?.error?.code === "STEP_UP_REQUIRED" && stepUp && (await stepUp()))
-      return download(path, body);
+    if (
+      j?.error?.code === "STEP_UP_REQUIRED" &&
+      !steppedUp &&
+      stepUp &&
+      (await stepUp())
+    )
+      return download(path, body, true);
     throw new ApiError(
       j?.error?.code ?? "SERVICE_UNAVAILABLE",
       j?.error?.message ?? t.serviceUnavailable,
@@ -134,7 +154,8 @@ export async function download(path: string, body?: unknown): Promise<void> {
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
-  URL.revokeObjectURL(a.href);
+  // Some browsers start the download after click() returns.
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
 }
 
 /**
@@ -231,3 +252,9 @@ export async function copy(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Bank payment pages only (MonoPay); anything else is not rendered as a link. */
+export const safeBankUrl = (u: string | null | undefined) =>
+  typeof u === "string" && /^https:\/\/pay\.(mbnk\.biz|monobank\.ua)\//.test(u)
+    ? u
+    : null;

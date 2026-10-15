@@ -236,7 +236,7 @@ type WholesaleRow = {
   id: number;
   number: string;
   name: string;
-  phone: string;
+  phone_masked: string | null;
   buyer_type: string;
   tax_id: string;
   email: string;
@@ -261,6 +261,38 @@ const WS_BUYER: Record<string, string> = {
   CHARITY: "Благодійний фонд",
   MILITARY: "Військова частина",
 };
+/** Masked number; the full one only on request (audited, limited per hour — R4-05). */
+function WsPhone({ r }: { r: WholesaleRow }) {
+  const { notify } = useWorkspace();
+  const [phone, setPhone] = useState<string | null>(null);
+  if (phone)
+    return (
+      <a className="link num" href={telHref(phone)}>
+        {phone}
+      </a>
+    );
+  return (
+    <span className="num">
+      {r.phone_masked ?? "—"}{" "}
+      <button
+        type="button"
+        className="btn small ghost"
+        onClick={async () => {
+          try {
+            setPhone(
+              (await api<{ phone: string }>(`/wholesale/${r.id}/phone`, {}))
+                .phone,
+            );
+          } catch (e) {
+            notify((e as Error).message, "error");
+          }
+        }}
+      >
+        Показати
+      </button>
+    </span>
+  );
+}
 function Wholesale() {
   const can = useCan();
   const qc = useQueryClient();
@@ -309,9 +341,7 @@ function Wholesale() {
       title: "Контакт",
       render: (r) => (
         <>
-          <a className="link num" href={telHref(r.phone)}>
-            {r.phone}
-          </a>
+          <WsPhone r={r} />
           {r.email && <small>{r.email}</small>}
         </>
       ),
@@ -380,9 +410,7 @@ function Wholesale() {
                 <span>
                   {r.name} · {WS_BUYER[r.buyer_type] ?? r.buyer_type}
                 </span>
-                <a className="link num" href={telHref(r.phone)}>
-                  {r.phone}
-                </a>
+                <WsPhone r={r} />
                 <span className="sub">{r.composition}</span>
                 {can("wholesale.manage") && (
                   <button className="btn sm" onClick={() => open(r)}>

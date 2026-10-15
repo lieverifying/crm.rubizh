@@ -13,6 +13,7 @@ import {
   telHref,
   useCan,
   useWorkspace,
+  safeBankUrl,
 } from "./lib";
 import {
   ActionDialog,
@@ -631,7 +632,7 @@ export function OrderCard() {
                     <small className="cell-sub">
                       {date(i.created_at, true)} · {label(t.invoice, i.status)}
                     </small>
-                    {i.page_url && (
+                    {safeBankUrl(i.page_url) && (
                       <span className="row">
                         <button
                           className="btn small"
@@ -648,7 +649,7 @@ export function OrderCard() {
                         </button>
                         <a
                           className="btn small"
-                          href={i.page_url}
+                          href={safeBankUrl(i.page_url)!}
                           target="_blank"
                           rel="noreferrer noopener"
                         >
