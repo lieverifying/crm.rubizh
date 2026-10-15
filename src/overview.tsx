@@ -1,374 +1,522 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import type {
+  Analytics as AnalyticsT,
+  Dashboard,
+  OrderSummary,
+} from "./contract.gen";
+import { api, date, money, params, shortDate, useCan } from "./lib";
 import {
-  ArrowUpRight,
-  ShoppingBag,
-  Clock,
-  Truck,
-  AlertTriangle,
-  CreditCard,
-  CalendarDays,
-} from "lucide-react";
-import { api, params } from "./api";
-import type { Dashboard, Report, Settings } from "./api";
-import {
-  PageHead,
-  Section,
-  Loading,
-  ErrorBox,
+  Bars,
   Empty,
-  money,
-  date,
-  Badge,
-} from "./ui";
-import { useCan } from "./context";
-function Stat({
-  title,
-  value,
-  detail,
-  icon: Icon,
-}: {
-  title: string;
-  value: string | number;
-  detail: string;
-  icon: typeof ShoppingBag;
-}) {
-  return (
-    <div className="stat-card">
-      <div>
-        <span>{title}</span>
-        <Icon size={17} />
-      </div>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </div>
-  );
+  ErrorBox,
+  Kpi,
+  LineChart,
+  Loading,
+  PageHead,
+  Panel,
+  PeriodSelect,
+  Status3,
+} from "./kit";
+import { t } from "./i18n";
+
+type Money = {
+  value_minor: number | null;
+  previous_minor: number | null;
+  available?: boolean;
+  note?: string | null;
+};
+function usePeriod(initial = "30d") {
+  const [period, setPeriod] = useState(initial),
+    [from, setFrom] = useState(""),
+    [to, setTo] = useState("");
+  const query = { period, ...(period === "custom" ? { from, to } : {}) };
+  const ready = period !== "custom" || (!!from && !!to);
+  return {
+    period,
+    setPeriod,
+    from,
+    to,
+    setRange: (f: string, x: string) => {
+      setFrom(f);
+      setTo(x);
+    },
+    query,
+    ready,
+  };
 }
+
 export function Overview() {
-  const q = useQuery({
-    queryKey: ["dashboard"],
+  const can = useCan();
+  const p = usePeriod("30d");
+  const d = useQuery({
+    queryKey: ["dashboard", p.query],
     queryFn: ({ signal }) =>
-      api<Dashboard>("/dashboard", undefined, "GET", signal),
+      api<Dashboard>("/dashboard" + params(p.query), undefined, { signal }),
+    enabled: p.ready,
+    refetchInterval: 60_000,
   });
+  const kpi = d.data?.kpi as
+    | Record<string, Money & { value?: number; previous?: number }>
+    | undefined;
+  const statuses = d.data?.statuses as Record<string, number> | undefined;
+  const statusNames: Record<string, string> = {
+    waiting: "Очікує підтвердження",
+    confirmed: "Підтверджене",
+    packing: "У комплектації",
+    delivery: "Передане на доставку",
+    completed: "Завершене",
+    cancelled: "Скасоване",
+  };
   return (
     <>
       <PageHead
-        eyebrow="ОПЕРАЦІЇ / СЬОГОДНІ"
-        title="Огляд робочого дня"
-        description={new Intl.DateTimeFormat("uk-UA", {
-          dateStyle: "full",
-          timeZone: "Europe/Kyiv",
-        }).format(new Date())}
-        action={
-          <Link className="btn primary" to="/orders">
-            До замовлень <ArrowUpRight size={16} />
-          </Link>
+        eyebrow="Ваш магазин під контролем"
+        title="Огляд"
+        text="Ключові показники за обраний період (час — Київ)."
+        actions={
+          <PeriodSelect
+            value={p.period}
+            onChange={p.setPeriod}
+            from={p.from}
+            to={p.to}
+            onRange={p.setRange}
+          />
         }
       />
-      {q.isPending ? (
-        <Loading />
-      ) : q.isError ? (
-        <ErrorBox error={q.error} onRetry={() => q.refetch()} />
+      {d.isPending ? (
+        <Loading rows={6} />
+      ) : d.isError ? (
+        <ErrorBox error={d.error} onRetry={() => void d.refetch()} />
       ) : (
-        <>
-          <div className="stats-grid">
-            <Stat
-              title="Нові замовлення"
-              value={q.data.today.metrics.orders_created || 0}
-              detail="Створені сьогодні"
-              icon={ShoppingBag}
+        <div className="stack">
+          <div className="kpis">
+            {kpi?.revenue && (
+              <Kpi
+                title="Виручка"
+                value={money(kpi.revenue.value_minor)}
+                now={kpi.revenue.value_minor}
+                prev={kpi.revenue.previous_minor}
+                hint="оплачено за період"
+              />
+            )}
+            <Kpi
+              title="Замовлення"
+              value={kpi?.orders.value ?? 0}
+              now={kpi?.orders.value}
+              prev={kpi?.orders.previous}
+              hint="створено за період"
             />
-            <Stat
-              title="Потребують підтвердження"
-              value={q.data.counts.confirmation || 0}
-              detail="Перевірити наявність і склад"
-              icon={Clock}
+            {kpi?.average && (
+              <Kpi
+                title="Середній чек"
+                value={money(kpi.average.value_minor)}
+                now={kpi.average.value_minor}
+                prev={kpi.average.previous_minor}
+              />
+            )}
+            <Kpi
+              title="Очікують обробки"
+              value={kpi?.awaiting_processing.value ?? 0}
+              hint="підтвердження та відправка"
             />
-            <Stat
-              title="До відправлення"
-              value={q.data.counts.paid_to_ship || 0}
-              detail="Оплачені замовлення"
-              icon={Truck}
-            />
-            <Stat
-              title={
-                q.data.today.financial ? "Оплачено сьогодні" : "Очікують оплати"
-              }
-              value={
-                q.data.today.financial
-                  ? money(q.data.today.financial.paid_revenue)
-                  : q.data.counts.waiting_payment || 0
-              }
-              detail={
-                q.data.today.financial
-                  ? "Підтверджені платежі"
-                  : "Підтверджені замовлення"
-              }
-              icon={CreditCard}
-            />
+            {can("dashboard.finance") && kpi?.gross_profit && (
+              <Kpi
+                title="Валовий прибуток"
+                value={
+                  kpi.gross_profit.available
+                    ? money(kpi.gross_profit.value_minor)
+                    : "—"
+                }
+                now={kpi.gross_profit.value_minor}
+                prev={kpi.gross_profit.previous_minor}
+                hint={
+                  kpi.gross_profit.available
+                    ? "до операційних витрат"
+                    : (kpi.gross_profit.note ?? "")
+                }
+              />
+            )}
           </div>
-          <div className="overview-grid">
-            <Section
-              title="Черга підтвердження"
+          <div className="grid-2">
+            <Panel
+              title="Динаміка"
               meta={
-                <Link to="/orders?view=confirmation" className="text-link">
-                  Усі замовлення <ArrowUpRight size={14} />
+                <span className="muted">
+                  {date(
+                    String(
+                      (d.data.period as { label_from?: string }).label_from,
+                    ),
+                  )}{" "}
+                  —{" "}
+                  {date(
+                    String((d.data.period as { label_to?: string }).label_to),
+                  )}
+                </span>
+              }
+            >
+              <div className="panel-body">
+                <LineChart
+                  label={
+                    can("order.finance.view")
+                      ? "Виручка за днями порівняно з попереднім періодом"
+                      : "Замовлення за днями"
+                  }
+                  points={(d.data.chart ?? []).map((c) => {
+                    const r = c as {
+                      date: string;
+                      orders: number;
+                      revenue_minor?: number;
+                      previous_revenue_minor?: number;
+                    };
+                    return {
+                      x: shortDate(r.date),
+                      y:
+                        r.revenue_minor !== undefined
+                          ? r.revenue_minor / 100
+                          : r.orders,
+                      prev:
+                        r.previous_revenue_minor !== undefined
+                          ? r.previous_revenue_minor / 100
+                          : undefined,
+                    };
+                  })}
+                />
+                <p className="muted">
+                  {can("order.finance.view")
+                    ? "Суцільна лінія — поточний період, пунктир — попередній."
+                    : "Кількість створених замовлень."}
+                </p>
+              </div>
+            </Panel>
+            <Panel title="Замовлення за статусами">
+              <div className="panel-body">
+                <Bars
+                  items={Object.entries(statusNames).map(([k, name]) => ({
+                    label: name,
+                    value: statuses?.[k] ?? 0,
+                    text: String(statuses?.[k] ?? 0),
+                  }))}
+                />
+              </div>
+            </Panel>
+          </div>
+          <div className="grid-2">
+            <Panel
+              title="Останні замовлення"
+              meta={
+                <Link className="link" to="/orders">
+                  Усі замовлення
                 </Link>
               }
             >
-              {q.data.requires_action.length ? (
-                <div className="action-list">
-                  {q.data.requires_action.map((o) => (
-                    <Link key={o.id} to={"/orders/" + o.id}>
-                      <div className="list-avatar">
-                        <ShoppingBag size={19} />
-                      </div>
-                      <div>
-                        <strong>{o.number}</strong>
-                        <small>
-                          {o.customer.name} · {date(o.created_at)}
-                        </small>
-                      </div>
-                      <Badge value={o.order_status} />
-                      <span className="amount">{money(o.total)}</span>
-                      <ArrowUpRight size={16} />
-                    </Link>
-                  ))}
-                </div>
+              <OrderMiniList rows={d.data.recent as OrderSummary[]} />
+            </Panel>
+            <Panel title="Потребує уваги">
+              {(d.data.attention as OrderSummary[]).length ? (
+                <OrderMiniList
+                  rows={d.data.attention as OrderSummary[]}
+                  attention
+                />
               ) : (
                 <Empty
-                  title="Черга опрацьована"
-                  description="Нові замовлення з підтвердженням з’являться тут."
+                  title="Усе під контролем"
+                  text="Немає замовлень, що чекають рішення."
                 />
               )}
-            </Section>
-            <Section
-              title="Потребують уваги"
-              meta={<AlertTriangle size={17} className="accent" />}
-            >
-              {q.data.problems.length ? (
-                <div className="problem-list">
-                  {q.data.problems.map((o) => (
-                    <Link key={o.id} to={"/orders/" + o.id}>
-                      <strong>{o.number}</strong>
-                      <Badge value={o.blockers[0] ?? o.order_status} />
-                      <small>{o.customer.name}</small>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <Empty
-                  title="Критичних задач немає"
-                  description="Проблеми оплат, відправлень і старих замовлень з’являться тут."
-                />
-              )}
-            </Section>
+            </Panel>
           </div>
-          <Section
-            title="Стан операцій"
-            meta={<span className="muted">Усі замовлення</span>}
-          >
-            <div className="operation-grid">
-              {[
-                ["payment", "Очікують оплати", q.data.counts.waiting_payment],
-                ["shipping", "До відправлення", q.data.counts.paid_to_ship],
-                ["transit", "У дорозі", q.data.counts.transit],
-                ["problems", "Проблемні", q.data.counts.problems],
-              ].map(([view, title, value]) => (
-                <Link key={view} to={"/orders?view=" + view}>
-                  <span>{title}</span>
-                  <strong>{value || 0}</strong>
-                  <ArrowUpRight size={17} />
-                </Link>
-              ))}
-            </div>
-          </Section>
-        </>
+          <div className="grid-even">
+            <Panel title="Популярні товари">
+              <div className="panel-body">
+                {(d.data.popular ?? []).length ? (
+                  <Bars
+                    items={(
+                      d.data.popular as {
+                        name: string | null;
+                        sku: string;
+                        qty: number;
+                      }[]
+                    ).map((r) => ({
+                      label: r.name ?? r.sku,
+                      value: r.qty,
+                      text: r.qty + " шт.",
+                    }))}
+                  />
+                ) : (
+                  <Empty title="Продажів за період немає" text="" />
+                )}
+              </div>
+            </Panel>
+            {can("dashboard.managers") && d.data.managers ? (
+              <Panel
+                title="Робота менеджерів"
+                meta={<span className="muted">лише для власника</span>}
+              >
+                <div className="panel-body">
+                  <Bars
+                    items={(
+                      d.data.managers as {
+                        name: string;
+                        assigned: number;
+                        confirmed: number;
+                        completed: number;
+                      }[]
+                    ).map((m) => ({
+                      label: m.name,
+                      value: m.assigned,
+                      text: `${m.assigned} призначено · ${m.confirmed} підтверджено · ${m.completed} завершено`,
+                    }))}
+                  />
+                </div>
+              </Panel>
+            ) : (
+              <Panel title="Остання активність">
+                <ActivityList rows={(d.data.activity ?? []) as ActivityRow[]} />
+              </Panel>
+            )}
+          </div>
+          {can("dashboard.managers") && (
+            <Panel title="Остання активність">
+              <ActivityList rows={(d.data.activity ?? []) as ActivityRow[]} />
+            </Panel>
+          )}
+        </div>
       )}
     </>
   );
 }
-export function Reports() {
-  const [period, setPeriod] = useState("7d"),
-    [from, setFrom] = useState(""),
-    [to, setTo] = useState(""),
-    [manager, setManager] = useState(""),
-    [supplier, setSupplier] = useState("");
-  const can = useCan("financial.audit.view");
-  const settings = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => api<Settings>("/settings"),
-  });
-  const q = useQuery({
-    queryKey: ["reports", period, from, to, manager, supplier],
+
+function OrderMiniList({
+  rows,
+  attention = false,
+}: {
+  rows: OrderSummary[];
+  attention?: boolean;
+}) {
+  if (!rows.length) return <Empty title="Замовлень ще немає" text="" />;
+  return (
+    <div>
+      {rows.map((o) => (
+        <Link key={o.id} to={"/orders/" + o.id} className="mcard">
+          <div className="mcard-top">
+            <strong>{o.number}</strong>
+            <span className="num">{money(o.total_minor)}</span>
+          </div>
+          <div className="sub">
+            {String(o.customer.name || "—")} · {date(o.created_at, true)}
+            {attention && o.attention.length
+              ? " · " + o.attention.map((a) => t.attention[a] ?? a).join(", ")
+              : ""}
+          </div>
+          <Status3 display={o.display} />
+        </Link>
+      ))}
+    </div>
+  );
+}
+type ActivityRow = {
+  id: string;
+  actor: string | null;
+  action: string;
+  entity: string;
+  entity_id: string;
+  created_at: string;
+  reason: string;
+};
+export function ActivityList({ rows }: { rows: ActivityRow[] }) {
+  if (!rows.length) return <Empty title="Подій ще немає" text="" />;
+  return (
+    <div className="timeline">
+      {rows.map((r) => (
+        <div className="timeline-item" key={r.id}>
+          <i aria-hidden="true" />
+          <div>
+            <strong>{actionText(r.action)}</strong>
+            {r.entity === "order" && (
+              <>
+                {" "}
+                ·{" "}
+                <Link className="link" to={"/orders/" + r.entity_id}>
+                  замовлення
+                </Link>
+              </>
+            )}
+            <small className="cell-sub">
+              {date(r.created_at, true)} · {r.actor ?? "Система"}
+              {r.reason ? " · " + r.reason : ""}
+            </small>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+const actionNames: Record<string, string> = {
+  "order.assign": "Призначено менеджера",
+  "order.confirm": "Замовлення підтверджено",
+  "order.cancel": "Замовлення скасовано",
+  "order.invoice": "Створено посилання на оплату",
+  "order.packing": "Передано в комплектацію",
+  "order.complete": "Замовлення завершено",
+  "order.line_stock": "Перевірено залишок",
+  "order.line_replace": "Позицію замінено",
+  "order.line_remove": "Позицію прибрано",
+  "order.line_supplier": "Призначено постачальника рядку",
+  "order.delivery_update": "Виправлено адресу доставки",
+  "order.problem": "Змінено позначку проблеми",
+  "order.create_phone": "Створено замовлення з телефону",
+  "note.append": "Додано коментар",
+  "payment.refund.request": "Запит повернення коштів",
+  "payment.refund.result": "Результат повернення коштів",
+  "payment.invoice.accept": "Прийнято оплату за рахунком",
+  "payment.manual_reconcile": "Ручна звірка оплати",
+  "payment.reconcile_not_created": "Рахунок у банку не створено",
+  "shipment.draft": "Створено посилку",
+  "shipment.create": "Створено ТТН",
+  "shipment.refresh": "Оновлено статус НП",
+  "shipment.manual_deliver": "Доставку підтверджено вручну",
+  "shipment.resolve_unknown": "Розібрано ТТН",
+  "shipment.delete_ttn": "ТТН видалено",
+  "return.request": "Запит повернення",
+  "return.transition": "Змінено статус повернення",
+  "customer.phone_view": "Переглянуто телефон клієнта",
+  "login.success": "Вхід",
+  logout: "Вихід",
+  "staff.update": "Змінено співробітника",
+  "staff.invite": "Запрошено співробітника",
+  "export.orders": "Експорт замовлень",
+};
+export const actionText = (a: string) => actionNames[a] ?? a;
+
+export function Analytics() {
+  const p = usePeriod("30d");
+  const a = useQuery({
+    queryKey: ["analytics", p.query],
     queryFn: ({ signal }) =>
-      api<Report>(
-        "/reports" + params({ period, from, to, manager, supplier }),
-        undefined,
-        "GET",
-        signal,
-      ),
-    enabled: period !== "custom" || (!!from && !!to),
+      api<AnalyticsT>("/analytics" + params(p.query), undefined, { signal }),
+    enabled: p.ready,
   });
+  const totals = a.data?.totals as Record<string, number> | undefined;
+  const gp = a.data?.gross_profit as
+    | {
+        value_minor: number | null;
+        available: boolean;
+        note?: string;
+        missing_skus?: number;
+      }
+    | undefined;
+  const slices = a.data?.slices as
+    | Record<
+        string,
+        { name: string; orders?: number; qty?: number; revenue_minor: number }[]
+      >
+    | undefined;
   return (
     <>
       <PageHead
-        eyebrow="АНАЛІТИКА"
-        title="Звіти"
-        description="Оплати та повернення відображаються за датою підтвердження операції."
+        title={t.nav.analytics}
+        text="Гроші — за підтвердженими банком оплатами та виписками; формули — docs/crm/05."
+        actions={
+          <PeriodSelect
+            value={p.period}
+            onChange={p.setPeriod}
+            from={p.from}
+            to={p.to}
+            onRange={p.setRange}
+          />
+        }
       />
-      <div className="filters panel">
-        <CalendarDays size={17} />
-        <select
-          aria-label="Період звіту"
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-        >
-          <option value="today">Сьогодні</option>
-          <option value="yesterday">Учора</option>
-          <option value="7d">7 днів</option>
-          <option value="30d">30 днів</option>
-          <option value="custom">Свій період</option>
-        </select>
-        {period === "custom" && (
-          <>
-            <input
-              aria-label="З дати"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-            <input
-              aria-label="До дати"
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </>
-        )}
-        <select
-          aria-label="Менеджер звіту"
-          value={manager}
-          onChange={(e) => setManager(e.target.value)}
-        >
-          <option value="">Усі менеджери</option>
-          {settings.data?.staff.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Постачальник звіту"
-          value={supplier}
-          onChange={(e) => setSupplier(e.target.value)}
-        >
-          <option value="">Усі постачальники</option>
-          {settings.data?.sender_profiles.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      {q.isPending ? (
-        <Loading />
-      ) : q.isError ? (
-        <ErrorBox error={q.error} />
+      {a.isPending ? (
+        <Loading rows={6} />
+      ) : a.isError ? (
+        <ErrorBox error={a.error} onRetry={() => void a.refetch()} />
       ) : (
-        <>
-          <div className="stats-grid">
-            <Stat
-              title="Створено замовлень"
-              value={q.data.metrics.orders_created || 0}
-              detail="У вибраному періоді"
-              icon={ShoppingBag}
+        <div className="stack">
+          <div className="kpis">
+            <Kpi
+              title="Виручка"
+              value={money(totals?.revenue_minor)}
+              now={totals?.revenue_minor}
+              prev={totals?.previous_revenue_minor}
             />
-            <Stat
-              title="Доставлено"
-              value={q.data.metrics.delivered || 0}
-              detail="Замовлення цього періоду"
-              icon={Truck}
+            <Kpi
+              title="Оплачених замовлень"
+              value={totals?.paid_orders ?? 0}
+              hint={`створено ${totals?.orders_created ?? 0}`}
             />
-            <Stat
+            <Kpi title="Середній чек" value={money(totals?.average_minor)} />
+            <Kpi
               title="Повернення"
-              value={q.data.metrics.returns || 0}
-              detail="Фізичні заявки"
-              icon={AlertTriangle}
+              value={money(totals?.refunds_minor)}
+              hint={"чиста виручка " + money(totals?.net_minor)}
             />
-            <Stat
-              title="Черга підтвердження"
-              value={q.data.metrics.confirmation_queue || 0}
-              detail="Замовлення цього періоду"
-              icon={Clock}
+            <Kpi
+              title="Валовий прибуток"
+              value={gp?.available ? money(gp.value_minor) : "—"}
+              hint={
+                gp?.available
+                  ? "собівартість — виплата постачальнику (PIM)"
+                  : (gp?.note ?? "") +
+                    (gp?.missing_skus
+                      ? ` · SKU без даних: ${gp.missing_skus}`
+                      : "")
+              }
+            />
+            <Kpi
+              title="Покупці"
+              value={`${totals?.new_buyers ?? 0} нових / ${totals?.repeat_buyers ?? 0} повторних`}
             />
           </div>
-          {can && q.data.financial && (
-            <>
-              <div className="stats-grid">
-                <Stat
-                  title="Оплачений оборот"
-                  value={money(q.data.financial.paid_revenue)}
-                  detail="Підтверджені платежі"
-                  icon={CreditCard}
-                />
-                <Stat
-                  title="Повернено коштів"
-                  value={money(q.data.financial.refunds)}
-                  detail="Успішні повернення"
-                  icon={CreditCard}
-                />
-                <Stat
-                  title="Чистий оборот"
-                  value={money(q.data.financial.net_revenue)}
-                  detail="Оплати мінус повернення"
-                  icon={CreditCard}
-                />
-                <Stat
-                  title="Середній чек"
-                  value={money(q.data.financial.average_paid_order)}
-                  detail={q.data.financial.paid_orders + " оплачених замовлень"}
-                  icon={ShoppingBag}
-                />
-              </div>
-              <Section title="Оплати за днями">
-                {q.data.financial.daily.length ? (
-                  <div className="chart">
-                    {q.data.financial.daily.map((d) => (
-                      <div key={d.date}>
-                        <span>{date(d.date)}</span>
-                        <div className="chart-track">
-                          <i
-                            style={{
-                              width:
-                                Math.max(
-                                  2,
-                                  (d.amount /
-                                    Math.max(
-                                      ...q.data.financial!.daily.map(
-                                        (v) => v.amount,
-                                      ),
-                                    )) *
-                                    100,
-                                ) + "%",
-                            }}
-                          />
-                        </div>
-                        <strong>{money(d.amount)}</strong>
-                      </div>
-                    ))}
+          <Panel title="Виручка за днями">
+            <div className="panel-body">
+              <LineChart
+                label="Виручка за днями"
+                points={(
+                  a.data.daily as { date: string; revenue_minor: number }[]
+                ).map((r) => ({
+                  x: shortDate(r.date),
+                  y: r.revenue_minor / 100,
+                }))}
+              />
+            </div>
+          </Panel>
+          <div className="grid-even">
+            {(["managers", "suppliers", "categories", "channels"] as const).map(
+              (k) => (
+                <Panel
+                  key={k}
+                  title={
+                    {
+                      managers: "За менеджерами",
+                      suppliers: "За постачальниками",
+                      categories: "За категоріями",
+                      channels: "За каналами",
+                    }[k]
+                  }
+                >
+                  <div className="panel-body">
+                    {(slices?.[k] ?? []).length ? (
+                      <Bars
+                        items={slices![k].map((r) => ({
+                          label:
+                            k === "channels"
+                              ? (t.channel[r.name] ?? r.name)
+                              : r.name,
+                          value: r.revenue_minor,
+                          text: money(r.revenue_minor),
+                        }))}
+                      />
+                    ) : (
+                      <Empty title="Немає даних" text="" />
+                    )}
                   </div>
-                ) : (
-                  <Empty
-                    title="Підтверджених оплат немає"
-                    description="Неоплачені замовлення не включаються в оборот."
-                  />
-                )}
-              </Section>
-            </>
-          )}
-        </>
+                </Panel>
+              ),
+            )}
+          </div>
+        </div>
       )}
     </>
   );

@@ -1,81 +1,244 @@
-import { useEffect, useState } from "react";
 import {
-  NavLink,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import {
   Link,
+  NavLink,
   Route,
   Routes,
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutDashboard,
-  ShoppingBag,
-  Users,
-  Truck,
-  CreditCard,
-  RotateCcw,
-  ChartNoAxesCombined,
-  ScrollText,
-  Settings,
-  Search,
-  PanelLeftClose,
-  PanelLeftOpen,
   Bell,
-  ChevronDown,
-  Menu,
-  X,
+  BarChart3,
+  Boxes,
+  ClipboardList,
+  CreditCard,
+  Factory,
+  LayoutDashboard,
   LogOut,
-  Sun,
+  Menu,
   Moon,
-  ArrowRight,
-  Command,
-  ShieldCheck,
+  PanelLeftClose,
+  RotateCcw,
+  ScrollText,
+  Search,
+  Settings,
+  ShoppingBag,
+  Sun,
+  Truck,
+  UserCog,
+  Users,
+  X,
 } from "lucide-react";
-import { api, ApiError } from "./api";
-import type { Staff, Dashboard, Order, Customer, Shipment } from "./api";
-import { Workspace } from "./context";
-import { label, Dialog, ErrorBox, Loading, Toast, useDebounce } from "./ui";
-import { Overview, Reports } from "./overview";
-import { Orders, OrderPage } from "./orders";
+import type {
+  NotificationList,
+  Permission,
+  SearchResult,
+  Session,
+} from "./contract.gen";
 import {
-  Customers,
-  CustomerPage,
-  Payments,
-  PaymentPage,
-  Shipments,
-  ShipmentPage,
-  Returns,
-  ReturnPage,
-  AuditPage,
-  SettingsPage,
-} from "./sections";
-const navigation = [
-  ["", "Огляд", LayoutDashboard],
-  ["orders", "Замовлення", ShoppingBag],
-  ["customers", "Клієнти", Users],
-  ["shipments", "Відправлення", Truck],
-  ["payments", "Платежі", CreditCard],
-  ["returns", "Повернення", RotateCcw],
-  ["reports", "Звіти", ChartNoAxesCombined],
-  ["audit", "Журнал дій", ScrollText],
-  ["settings", "Налаштування", Settings],
-] as const;
-function Mark() {
-  return (
-    <span className="brand-mark" aria-hidden="true">
-      <i />
-      <i />
-      <i />
-    </span>
-  );
-}
+  api,
+  initials,
+  params,
+  useCan,
+  useWorkspace,
+  WorkspaceContext,
+} from "./lib";
+import { Dialog, ErrorBox, Loading, Toast, useDebounce } from "./kit";
+import { AcceptToken, Login, StepUpHost, TotpEnroll } from "./auth";
+import { t } from "./i18n";
+
+const Overview = lazy(() =>
+  import("./overview").then((m) => ({ default: m.Overview })),
+);
+const Analytics = lazy(() =>
+  import("./overview").then((m) => ({ default: m.Analytics })),
+);
+const Orders = lazy(() =>
+  import("./orders").then((m) => ({ default: m.Orders })),
+);
+const OrderCard = lazy(() =>
+  import("./order-card").then((m) => ({ default: m.OrderCard })),
+);
+const OrderCreate = lazy(() =>
+  import("./order-create").then((m) => ({ default: m.OrderCreate })),
+);
+const Payments = lazy(() =>
+  import("./money").then((m) => ({ default: m.Payments })),
+);
+const PaymentCard = lazy(() =>
+  import("./money").then((m) => ({ default: m.PaymentCard })),
+);
+const Returns = lazy(() =>
+  import("./money").then((m) => ({ default: m.Returns })),
+);
+const ReturnCard = lazy(() =>
+  import("./money").then((m) => ({ default: m.ReturnCard })),
+);
+const Customers = lazy(() =>
+  import("./sections").then((m) => ({ default: m.Customers })),
+);
+const CustomerCard = lazy(() =>
+  import("./sections").then((m) => ({ default: m.CustomerCard })),
+);
+const Delivery = lazy(() =>
+  import("./sections").then((m) => ({ default: m.Delivery })),
+);
+const ShipmentCard = lazy(() =>
+  import("./sections").then((m) => ({ default: m.ShipmentCard })),
+);
+const Products = lazy(() =>
+  import("./catalog").then((m) => ({ default: m.Products })),
+);
+const ProductCard = lazy(() =>
+  import("./catalog").then((m) => ({ default: m.ProductCard })),
+);
+const Suppliers = lazy(() =>
+  import("./catalog").then((m) => ({ default: m.Suppliers })),
+);
+const SupplierCard = lazy(() =>
+  import("./catalog").then((m) => ({ default: m.SupplierCard })),
+);
+const Tasks = lazy(() => import("./work").then((m) => ({ default: m.Tasks })));
+const Notifications = lazy(() =>
+  import("./work").then((m) => ({ default: m.Notifications })),
+);
+const Activity = lazy(() =>
+  import("./work").then((m) => ({ default: m.Activity })),
+);
+const Staff = lazy(() => import("./team").then((m) => ({ default: m.Staff })));
+const SettingsPage = lazy(() =>
+  import("./team").then((m) => ({ default: m.SettingsPage })),
+);
+
+type NavItem = {
+  path: string;
+  name: string;
+  icon: typeof LayoutDashboard;
+  perm: Permission;
+};
+const NAV: [string, NavItem[]][] = [
+  [
+    t.nav.groups.main,
+    [
+      {
+        path: "",
+        name: t.nav.overview,
+        icon: LayoutDashboard,
+        perm: "dashboard.view",
+      },
+      {
+        path: "orders",
+        name: t.nav.orders,
+        icon: ShoppingBag,
+        perm: "order.view",
+      },
+      {
+        path: "customers",
+        name: t.nav.customers,
+        icon: Users,
+        perm: "customer.view",
+      },
+      {
+        path: "tasks",
+        name: t.nav.tasks,
+        icon: ClipboardList,
+        perm: "task.view",
+      },
+    ],
+  ],
+  [
+    t.nav.groups.sales,
+    [
+      {
+        path: "analytics",
+        name: t.nav.analytics,
+        icon: BarChart3,
+        perm: "report.view",
+      },
+      {
+        path: "payments",
+        name: t.nav.payments,
+        icon: CreditCard,
+        perm: "payment.view",
+      },
+      {
+        path: "returns",
+        name: t.nav.returns,
+        icon: RotateCcw,
+        perm: "return.view",
+      },
+    ],
+  ],
+  [
+    t.nav.groups.catalog,
+    [
+      {
+        path: "products",
+        name: t.nav.products,
+        icon: Boxes,
+        perm: "product.view",
+      },
+      {
+        path: "suppliers",
+        name: t.nav.suppliers,
+        icon: Factory,
+        perm: "supplier.view",
+      },
+      {
+        path: "delivery",
+        name: t.nav.delivery,
+        icon: Truck,
+        perm: "shipment.view",
+      },
+    ],
+  ],
+  [
+    t.nav.groups.team,
+    [
+      { path: "staff", name: t.nav.staff, icon: UserCog, perm: "staff.manage" },
+      {
+        path: "activity",
+        name: t.nav.activity,
+        icon: ScrollText,
+        perm: "audit.view",
+      },
+    ],
+  ],
+  [
+    t.nav.groups.system,
+    [
+      {
+        path: "notifications",
+        name: t.nav.notifications,
+        icon: Bell,
+        perm: "notification.view",
+      },
+      {
+        path: "settings",
+        name: t.nav.settings,
+        icon: Settings,
+        perm: "settings.personal",
+      },
+    ],
+  ],
+];
+
 export function App() {
   const client = useQueryClient();
+  const location = useLocation();
   useEffect(() => {
     const h = () => {
       client.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" });
-      client.invalidateQueries({ queryKey: ["session"] });
+      void client.invalidateQueries({ queryKey: ["session"] });
     };
     window.addEventListener("crm-auth-required", h);
     return () => window.removeEventListener("crm-auth-required", h);
@@ -83,166 +246,166 @@ export function App() {
   const session = useQuery({
     queryKey: ["session"],
     queryFn: ({ signal }) =>
-      api<{ authenticated: boolean; user: Staff | null }>(
-        "/auth/session",
-        undefined,
-        "GET",
-        signal,
-      ),
+      api<Session>("/auth/session", undefined, { signal }),
     retry: false,
+    staleTime: 60_000,
   });
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<{
+    message: string;
+    tone: "ok" | "error";
+  } | null>(null);
+  const notify = useCallback(
+    (message: string, tone: "ok" | "error" = "ok") =>
+      setToast({ message, tone }),
+    [],
+  );
+  const refresh = () =>
+    void client.invalidateQueries({ queryKey: ["session"] });
+  const logout = async () => {
+    try {
+      await api("/auth/logout", {});
+    } finally {
+      client.clear();
+      window.location.assign("/crm/");
+    }
+  };
+  if (location.pathname === "/accept")
+    return (
+      <AcceptToken
+        token={new URLSearchParams(location.search).get("token") ?? ""}
+      />
+    );
   if (session.isPending)
     return (
-      <div className="boot">
-        <Mark />
+      <main className="login">
         <Loading />
-      </div>
+      </main>
     );
   if (session.isError)
     return (
-      <div className="boot">
-        <ErrorBox error={session.error} onRetry={() => session.refetch()} />
-      </div>
+      <main className="login">
+        <ErrorBox
+          error={session.error}
+          onRetry={() => void session.refetch()}
+        />
+      </main>
     );
-  if (!session.data.user)
-    return (
-      <Login done={() => client.invalidateQueries({ queryKey: ["session"] })} />
-    );
+  if (!session.data.user) return <Login done={refresh} />;
+  if (session.data.totp_enroll_required)
+    return <TotpEnroll done={refresh} logout={() => void logout()} />;
   return (
-    <Workspace.Provider value={{ user: session.data.user, notify: setToast }}>
-      <Shell user={session.data.user} />
-      {toast && <Toast message={toast} onClose={() => setToast("")} />}
-    </Workspace.Provider>
+    <WorkspaceContext.Provider value={{ user: session.data.user, notify }}>
+      <Shell logout={() => void logout()} />
+      <StepUpHost totp={!!session.data.user.totp_enabled} />
+      {toast && (
+        <Toast
+          message={toast.message}
+          tone={toast.tone}
+          onClose={() => setToast(null)}
+        />
+      )}
+    </WorkspaceContext.Provider>
   );
 }
-function Login({ done }: { done: () => void }) {
-  const [email, setEmail] = useState(""),
-    [password, setPassword] = useState("");
-  const login = useMutation({
-    mutationFn: () => api("/auth/login", { email, password }),
-    onSuccess: () => {
-      setPassword("");
-      done();
-    },
-    onError: () => setPassword(""),
-  });
-  return (
-    <div className="login-page">
-      <div className="login-brand">
-        <Mark />
-        <span>РУБІЖ</span>
-      </div>
-      <div className="login-card">
-        <div className="eyebrow">РОБОЧИЙ ПРОСТІР</div>
-        <h1>Увійти до РУБІЖ</h1>
-        <p>Замовлення, клієнти та операції — в одному місці.</p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            login.mutate();
-          }}
-        >
-          <label>
-            Email співробітника
-            <input
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
-            />
-          </label>
-          <label>
-            Пароль
-            <input
-              type="password"
-              autoComplete="current-password"
-              minLength={12}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </label>
-          {login.isError && <ErrorBox error={login.error} />}
-          <button className="btn primary" disabled={login.isPending}>
-            {login.isPending ? "Входимо…" : "Увійти"}
-            <ArrowRight size={17} />
-          </button>
-        </form>
-        <div className="login-foot">
-          <ShieldCheck size={15} /> Доступ лише для уповноважених співробітників
-        </div>
-      </div>
-      <span className="login-bottom">РУБІЖ · Операційний простір</span>
-    </div>
-  );
-}
-function Shell({ user }: { user: Staff }) {
-  const client = useQueryClient(),
-    location = useLocation(),
-    navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState(false),
-    [mobile, setMobile] = useState(false),
-    [search, setSearch] = useState(false),
-    [profile, setProfile] = useState(false),
-    [notifications, setNotifications] = useState(false),
-    [light, setLight] = useState(localStorage.getItem("crm.theme") === "light");
-  const [keyError, setKeyError] = useState<Error | null>(null);
-  const dashboard = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: ({ signal }) =>
-      api<Dashboard>("/dashboard", undefined, "GET", signal),
-    enabled: notifications,
-  });
-  const logout = useMutation({
-    mutationFn: () => api("/auth/logout", {}),
-    onSuccess: () => {
-      client.clear();
-      navigate("/");
-    },
-    onError: setKeyError,
-  });
+
+/** Light by default; the choice is remembered in the browser and in the staff profile. */
+function useTheme() {
+  const read = (): "light" | "dark" => {
+    try {
+      return localStorage.getItem("crm.theme") === "dark" ? "dark" : "light";
+    } catch {
+      return "light";
+    }
+  };
+  const [theme, setTheme] = useState<"light" | "dark">(read);
   useEffect(() => {
-    document.documentElement.dataset.theme = light ? "light" : "dark";
-    localStorage.setItem("crm.theme", light ? "light" : "dark");
-  }, [light]);
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("crm.theme", theme);
+    } catch {
+      /* private mode: theme stays for this tab */
+    }
+  }, [theme]);
+  const change = (next: "light" | "dark") => {
+    setTheme(next);
+    void api("/me/preferences", { theme: next }).catch(() => undefined);
+  };
+  return [theme, change] as const;
+}
+
+function Shell({ logout }: { logout: () => void }) {
+  const can = useCan();
+  const { user } = useWorkspace();
+  const location = useLocation();
+  const [mobile, setMobile] = useState(false),
+    [collapsed, setCollapsed] = useState(false),
+    [search, setSearch] = useState(false),
+    [bell, setBell] = useState(false);
+  const [theme, setTheme] = useTheme();
+  const nav = useMemo(
+    () =>
+      NAV.map(
+        ([g, items]) => [g, items.filter((i) => can(i.perm))] as const,
+      ).filter(([, items]) => items.length),
+    [can],
+  );
+  const counters = useQuery({
+    queryKey: ["counters"],
+    queryFn: () => api<{ tabs: Record<string, number> }>("/orders/counters"),
+    refetchInterval: 45_000,
+  });
+  const unread = useQuery({
+    queryKey: ["notifications", "badge"],
+    queryFn: () =>
+      api<NotificationList>("/notifications" + params({ limit: 8 })),
+    refetchInterval: 45_000,
+    enabled: can("notification.view"),
+  });
   useEffect(() => {
     setMobile(false);
-    setProfile(false);
-    setNotifications(false);
+    setBell(false);
   }, [location.pathname]);
   useEffect(() => {
-    const handle = (e: KeyboardEvent) => {
+    const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setSearch((v) => !v);
+        setSearch(true);
       }
       if (e.key === "Escape") {
         setMobile(false);
-        setProfile(false);
-        setNotifications(false);
+        setBell(false);
       }
     };
-    window.addEventListener("keydown", handle);
-    return () => window.removeEventListener("keydown", handle);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
   }, []);
-  const title =
-    navigation.find(
-      ([p]) => p === (location.pathname.split("/")[1] ?? ""),
-    )?.[1] ?? "Робочий простір";
+  const current = NAV.flatMap(([, i]) => i).find(
+    (i) => i.path === (location.pathname.split("/")[1] ?? ""),
+  );
   return (
-    <div className={"app-shell " + (collapsed ? "collapsed" : "")}>
+    <div className={"app " + (collapsed ? "collapsed" : "")}>
+      <a className="sr-only" href="#content">
+        До основного вмісту
+      </a>
       {mobile && (
-        <div className="mobile-scrim" onClick={() => setMobile(false)} />
+        <div
+          className="scrim"
+          onClick={() => setMobile(false)}
+          aria-hidden="true"
+        />
       )}
-      <aside className={"sidebar " + (mobile ? "mobile-open" : "")}>
-        <div className="brand">
-          <Link to="/" aria-label="РУБІЖ — огляд">
-            <Mark />
-            <span>РУБІЖ</span>
+      <aside
+        className={"sidebar " + (mobile ? "open" : "")}
+        aria-label="Головне меню"
+      >
+        <div className="row">
+          <Link className="brand" to="/">
+            <span className="brand-mark" aria-hidden="true">
+              Р
+            </span>
+            <span>{t.brand}</span>
           </Link>
+          <span className="spacer" />
           <button
             className="icon-btn mobile-only"
             aria-label="Закрити меню"
@@ -251,292 +414,372 @@ function Shell({ user }: { user: Staff }) {
             <X size={18} />
           </button>
         </div>
-        <div className="workspace-label">
-          <span className="workspace-dot" />
+        {nav.map(([group, items]) => (
+          <nav className="nav-group" key={group} aria-label={group}>
+            <div className="nav-group-title">{group}</div>
+            {items.map((i) => (
+              <NavLink
+                key={i.path}
+                to={"/" + i.path}
+                end={i.path === ""}
+                className={({ isActive }) =>
+                  "nav-link " + (isActive ? "active" : "")
+                }
+                title={collapsed ? i.name : undefined}
+              >
+                <i.icon size={18} aria-hidden="true" />
+                <span>{i.name}</span>
+                {i.path === "orders" &&
+                  (counters.data?.tabs.confirmation ?? 0) > 0 && (
+                    <b
+                      className="nav-count"
+                      aria-label="очікують підтвердження"
+                    >
+                      {counters.data?.tabs.confirmation}
+                    </b>
+                  )}
+                {i.path === "notifications" &&
+                  (unread.data?.unread ?? 0) > 0 && (
+                    <b className="nav-count" aria-label="непрочитані">
+                      {unread.data?.unread}
+                    </b>
+                  )}
+              </NavLink>
+            ))}
+          </nav>
+        ))}
+        <div className="side-user">
+          <span className="avatar" aria-hidden="true">
+            {initials(user.name)}
+          </span>
           <div>
-            Операційний простір<small>РУБІЖ CRM</small>
+            <strong>{user.name}</strong>
+            <small>{t.roles[user.role]}</small>
           </div>
-        </div>
-        <div className="nav-label">РОБОЧИЙ ПРОСТІР</div>
-        <nav>
-          {navigation.map(([path, name, Icon]) => (
-            <NavLink
-              key={path}
-              to={"/" + path}
-              end={path === ""}
-              title={collapsed ? name : undefined}
-            >
-              <Icon size={18} />
-              <span>{name}</span>
-              {path === "orders" && <i className="nav-indicator" />}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="sidebar-note">
-            <ShieldCheck size={16} />
-            <span>{label(user.role)}</span>
-          </div>
-          <button
-            className="collapse-button"
-            onClick={() => setCollapsed((v) => !v)}
-            aria-label={collapsed ? "Розгорнути панель" : "Згорнути панель"}
-          >
-            {collapsed ? (
-              <PanelLeftOpen size={18} />
-            ) : (
-              <PanelLeftClose size={18} />
-            )}
-            <span>Згорнути панель</span>
-          </button>
         </div>
       </aside>
-      <div className="main-shell">
+      <div className="main">
         <header className="topbar">
-          <div className="topbar-left">
-            <button
-              className="icon-btn mobile-only"
-              aria-label="Відкрити меню"
-              onClick={() => setMobile(true)}
-            >
-              <Menu size={20} />
-            </button>
-            <span className="topbar-workspace">Робочий простір</span>
-            <span className="crumb-separator">/</span>
-            <span>{title}</span>
-          </div>
-          <div className="topbar-actions">
-            <button className="search-trigger" onClick={() => setSearch(true)}>
-              <Search size={16} />
-              <span>Пошук у просторі</span>
-              <kbd>⌘ K</kbd>
-            </button>
-            <div className="popover-anchor">
+          <button
+            className="icon-btn mobile-only"
+            aria-label="Відкрити меню"
+            aria-expanded={mobile}
+            onClick={() => setMobile(true)}
+          >
+            <Menu size={20} />
+          </button>
+          <button
+            className="icon-btn desktop-only"
+            aria-label={collapsed ? "Розгорнути меню" : "Згорнути меню"}
+            onClick={() => setCollapsed((v) => !v)}
+          >
+            <PanelLeftClose size={18} />
+          </button>
+          <nav className="crumbs" aria-label="Навігаційний ланцюжок">
+            <span className="desktop-only">{t.workspace}</span>
+            <span className="desktop-only" aria-hidden="true">
+              /
+            </span>
+            <strong>{current?.name ?? t.workspace}</strong>
+          </nav>
+          <span className="spacer" />
+          <button
+            className="search-trigger"
+            onClick={() => setSearch(true)}
+            aria-label={t.search}
+          >
+            <Search size={16} aria-hidden="true" />
+            <span>{t.search}</span>
+            <kbd>⌘K</kbd>
+          </button>
+          <button
+            className="icon-btn"
+            aria-label={theme === "light" ? t.themeDark : t.themeLight}
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          >
+            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+          {can("notification.view") && (
+            <div className="anchor">
               <button
-                className={"icon-btn " + (notifications ? "selected" : "")}
-                aria-label="Важливі сповіщення"
-                onClick={() => {
-                  setNotifications((v) => !v);
-                  setProfile(false);
-                }}
+                className="icon-btn"
+                aria-label={t.notifications}
+                aria-expanded={bell}
+                onClick={() => setBell((v) => !v)}
               >
                 <Bell size={18} />
+                {(unread.data?.unread ?? 0) > 0 && (
+                  <span className="badge-dot">
+                    {Math.min(99, unread.data?.unread ?? 0)}
+                  </span>
+                )}
               </button>
-              {notifications && (
-                <div className="popover notifications">
-                  <h3>Потребують уваги</h3>
-                  {dashboard.isPending ? (
-                    <Loading />
-                  ) : dashboard.isError ? (
-                    <ErrorBox error={dashboard.error} />
+              {bell && (
+                <div
+                  className="popover"
+                  role="dialog"
+                  aria-label={t.notifications}
+                >
+                  <div className="panel-head">
+                    <h2>{t.notifications}</h2>
+                    <Link className="link" to="/notifications">
+                      Усі
+                    </Link>
+                  </div>
+                  {unread.data?.rows.length ? (
+                    (unread.data.rows as Record<string, unknown>[]).map((n) => (
+                      <Link
+                        key={String(n.id)}
+                        className="cmdk-item"
+                        to={
+                          n.entity === "order"
+                            ? "/orders/" + String(n.entity_id)
+                            : "/notifications"
+                        }
+                      >
+                        <span>
+                          {String(n.title)}
+                          <small className="cell-sub">
+                            {n.read ? "прочитано" : "нове"}
+                          </small>
+                        </span>
+                      </Link>
+                    ))
                   ) : (
-                    <>
-                      {[
-                        ...(dashboard.data?.problems ?? []),
-                        ...(dashboard.data?.requires_action ?? []),
-                      ]
-                        .slice(0, 6)
-                        .map((o) => (
-                          <Link key={o.id} to={"/orders/" + o.id}>
-                            <span>{o.number}</span>
-                            <small>
-                              {label(o.blockers[0] ?? o.order_status)}
-                            </small>
-                          </Link>
-                        ))}
-                      {!dashboard.data?.requires_action.length &&
-                        !dashboard.data?.problems.length && (
-                          <p>Критичних задач немає.</p>
-                        )}
-                    </>
+                    <p className="panel-body muted">Нових сповіщень немає.</p>
                   )}
                 </div>
               )}
             </div>
-            <button
-              className="icon-btn theme-button"
-              aria-label={
-                light ? "Увімкнути темну тему" : "Увімкнути світлу тему"
-              }
-              onClick={() => setLight((v) => !v)}
-            >
-              {light ? <Moon size={18} /> : <Sun size={18} />}
-            </button>
-            <div className="popover-anchor">
-              <button
-                className="profile-trigger"
-                onClick={() => {
-                  setProfile((v) => !v);
-                  setNotifications(false);
-                }}
-                aria-label="Профіль співробітника"
-              >
-                <span className="avatar">
-                  {user.name.slice(0, 2).toUpperCase()}
-                </span>
-                <ChevronDown size={13} />
-              </button>
-              {profile && (
-                <div className="popover">
-                  <strong>{user.name}</strong>
-                  <small>{user.email}</small>
-                  <span className="profile-role">{label(user.role)}</span>
-                  <button
-                    onClick={() => logout.mutate()}
-                    disabled={logout.isPending}
-                  >
-                    <LogOut size={15} />
-                    Вийти з простору
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          )}
+          <button
+            className="icon-btn"
+            aria-label={t.logout}
+            title={t.logout}
+            onClick={logout}
+          >
+            <LogOut size={18} />
+          </button>
         </header>
-        <main className="content">
-          {keyError && <ErrorBox error={keyError} />}
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/orders" element={<Orders />} />
-            <Route path="/orders/:id" element={<OrderPage />} />
-            <Route path="/customers" element={<Customers />} />
-            <Route path="/customers/:id" element={<CustomerPage />} />
-            <Route path="/payments" element={<Payments />} />
-            <Route path="/payments/:id" element={<PaymentPage />} />
-            <Route path="/shipments" element={<Shipments />} />
-            <Route path="/shipments/:id" element={<ShipmentPage />} />
-            <Route path="/returns" element={<Returns />} />
-            <Route path="/returns/:id" element={<ReturnPage />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/audit" element={<AuditPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route
-              path="*"
-              element={
-                <div className="empty">
-                  <h1>Сторінку не знайдено</h1>
-                  <Link className="btn" to="/">
-                    Повернутися до огляду
-                  </Link>
-                </div>
-              }
-            />
-          </Routes>
+        <main id="content" className="content" tabIndex={-1}>
+          <Suspense fallback={<Loading />}>
+            <Routes>
+              <Route
+                path="/"
+                element={can("dashboard.view") ? <Overview /> : <NoAccess />}
+              />
+              <Route path="/orders" element={<Orders />} />
+              <Route
+                path="/orders/new"
+                element={can("order.create") ? <OrderCreate /> : <NoAccess />}
+              />
+              <Route path="/orders/:id" element={<OrderCard />} />
+              <Route
+                path="/customers"
+                element={can("customer.view") ? <Customers /> : <NoAccess />}
+              />
+              <Route
+                path="/customers/:id"
+                element={can("customer.view") ? <CustomerCard /> : <NoAccess />}
+              />
+              <Route path="/tasks" element={<Tasks />} />
+              <Route
+                path="/analytics"
+                element={can("report.view") ? <Analytics /> : <NoAccess />}
+              />
+              <Route
+                path="/payments"
+                element={can("payment.view") ? <Payments /> : <NoAccess />}
+              />
+              <Route
+                path="/payments/:id"
+                element={can("payment.view") ? <PaymentCard /> : <NoAccess />}
+              />
+              <Route
+                path="/returns"
+                element={can("return.view") ? <Returns /> : <NoAccess />}
+              />
+              <Route
+                path="/returns/:id"
+                element={can("return.view") ? <ReturnCard /> : <NoAccess />}
+              />
+              <Route path="/products" element={<Products />} />
+              <Route path="/products/:id" element={<ProductCard />} />
+              <Route
+                path="/suppliers"
+                element={can("supplier.view") ? <Suppliers /> : <NoAccess />}
+              />
+              <Route
+                path="/suppliers/:code"
+                element={can("supplier.view") ? <SupplierCard /> : <NoAccess />}
+              />
+              <Route
+                path="/delivery"
+                element={can("shipment.view") ? <Delivery /> : <NoAccess />}
+              />
+              <Route
+                path="/delivery/:id"
+                element={can("shipment.view") ? <ShipmentCard /> : <NoAccess />}
+              />
+              <Route
+                path="/staff"
+                element={can("staff.manage") ? <Staff /> : <NoAccess />}
+              />
+              <Route
+                path="/activity"
+                element={can("audit.view") ? <Activity /> : <NoAccess />}
+              />
+              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route
+                path="*"
+                element={
+                  <div className="empty">
+                    <h1>{t.notFound}</h1>
+                    <Link className="btn" to="/">
+                      {t.nav.overview}
+                    </Link>
+                  </div>
+                }
+              />
+            </Routes>
+          </Suspense>
         </main>
-        <footer className="workspace-footer">
-          <span>
-            <i /> Робочий простір РУБІЖ
-          </span>
-          <span>РУБІЖ · Україна</span>
+        <footer className="footer">
+          <span>РУБІЖ CRM · дані SITE та PIM</span>
+          <span>Час — Київ</span>
         </footer>
       </div>
       {search && <CommandSearch onClose={() => setSearch(false)} />}
     </div>
   );
 }
+function NoAccess() {
+  return (
+    <div className="empty">
+      <h1>{t.noAccess}</h1>
+      <Link className="btn" to="/orders">
+        {t.nav.orders}
+      </Link>
+    </div>
+  );
+}
+
+/** ⌘K / Ctrl+K: orders (number, phone, name, email, TTN, SKU), customers, parcels, products — filtered by the server per role. */
 function CommandSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [input, setInput] = useState(""),
     [active, setActive] = useState(0);
-  const q = useDebounce(input);
+  const q = useDebounce(input, 250);
   const result = useQuery({
     queryKey: ["search", q],
     queryFn: ({ signal }) =>
-      api<{ orders: Order[]; customers: Customer[]; shipments: Shipment[] }>(
-        "/search?q=" + encodeURIComponent(q),
-        undefined,
-        "GET",
-        signal,
-      ),
-    enabled: q.length >= 2,
+      api<SearchResult>("/search" + params({ q }), undefined, { signal }),
+    enabled: q.trim().length >= 2,
   });
-  const entries = [
-    ...(result.data?.orders ?? []).map((o) => ({
+  type Hit = {
+    id: string;
+    group: string;
+    label: string;
+    detail: string;
+    path: string;
+  };
+  const rows = (k: keyof SearchResult) =>
+    (result.data?.[k] ?? []) as Record<string, unknown>[];
+  const hits: Hit[] = [
+    ...rows("orders").map((o) => ({
       id: "o" + o.id,
-      group: "Замовлення",
-      label: o.number,
-      detail: o.customer.name,
+      group: t.nav.orders,
+      label: String(o.number),
+      detail: String(o.customer ?? ""),
       path: "/orders/" + o.id,
     })),
-    ...(result.data?.customers ?? []).map((c) => ({
+    ...rows("customers").map((c) => ({
       id: "c" + c.id,
-      group: "Клієнти",
-      label: c.name || c.email,
-      detail: c.phone ?? "",
-      path: "/customers/" + encodeURIComponent(c.id),
+      group: t.nav.customers,
+      label: String(c.name || c.email || ""),
+      detail: String(c.phone_masked ?? ""),
+      path: "/customers/" + encodeURIComponent(String(c.id)),
     })),
-    ...(result.data?.shipments ?? []).map((s) => ({
+    ...rows("shipments").map((s) => ({
       id: "s" + s.id,
-      group: "Відправлення",
-      label: s.tracking_number ?? "Чернетка",
-      detail: s.order_number,
-      path: "/shipments/" + s.id,
+      group: t.nav.delivery,
+      label: String(s.tracking_number ?? "Чернетка"),
+      detail: String(s.order_number ?? ""),
+      path: "/delivery/" + s.id,
+    })),
+    ...rows("products").map((p) => ({
+      id: "p" + p.id,
+      group: t.nav.products,
+      label: String(p.name),
+      detail: String(p.skus) + " SKU",
+      path: "/products/" + encodeURIComponent(String(p.id)),
     })),
   ];
   useEffect(() => setActive(0), [q]);
-  const choose = (path: string) => {
-    navigate(path);
+  const go = (p: string) => {
+    navigate(p);
     onClose();
   };
   return (
-    <Dialog title="Пошук у просторі" onClose={onClose} wide>
-      <div className="command-search">
-        <Search size={19} />
+    <Dialog title={t.search} onClose={onClose} wide>
+      <div className="cmdk">
         <input
-          aria-label="Глобальний пошук"
-          autoFocus
+          aria-label={t.search}
+          placeholder={t.searchHint}
           value={input}
-          placeholder="Замовлення, клієнт, телефон, SKU або ТТН…"
           onChange={(e) => setInput(e.target.value)}
+          data-autofocus
+          role="combobox"
+          aria-expanded={hits.length > 0}
+          aria-controls="cmdk-results"
+          aria-activedescendant={
+            hits[active] ? "hit-" + hits[active].id : undefined
+          }
           onKeyDown={(e) => {
             if (e.key === "ArrowDown") {
               e.preventDefault();
-              setActive((v) => Math.min(v + 1, entries.length - 1));
+              setActive((v) => Math.min(v + 1, hits.length - 1));
             }
             if (e.key === "ArrowUp") {
               e.preventDefault();
               setActive((v) => Math.max(v - 1, 0));
             }
-            if (e.key === "Enter" && entries[active])
-              choose(entries[active].path);
+            if (e.key === "Enter" && hits[active]) go(hits[active].path);
           }}
         />
-      </div>
-      <div className="command-results">
-        {result.isFetching ? (
-          <Loading />
-        ) : result.isError ? (
-          <ErrorBox error={result.error} />
-        ) : q.length < 2 ? (
-          <p className="command-hint">Введіть щонайменше 2 символи</p>
-        ) : !entries.length ? (
-          <p className="command-hint">Збігів не знайдено</p>
-        ) : (
-          entries.map((r, i) => (
-            <div key={r.id}>
-              {(i === 0 || r.group !== entries[i - 1].group) && (
-                <div className="command-group">{r.group}</div>
-              )}
-              <button
-                className={"command-result " + (i === active ? "active" : "")}
-                onClick={() => choose(r.path)}
-                onMouseEnter={() => setActive(i)}
-              >
-                <span>
-                  {r.label}
-                  <small>{r.detail}</small>
-                </span>
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-      <div className="command-footer">
-        <span>
-          <Command size={12} /> Замовлення · Клієнти · Відправлення
-        </span>
-        <span>↑ ↓ вибір · Enter відкрити · Esc закрити</span>
+        <div id="cmdk-results" role="listbox" aria-label="Результати пошуку">
+          {q.trim().length < 2 ? (
+            <p className="panel-body muted">Введіть щонайменше 2 символи.</p>
+          ) : result.isFetching ? (
+            <Loading />
+          ) : result.isError ? (
+            <ErrorBox error={result.error} />
+          ) : !hits.length ? (
+            <p className="panel-body muted">{t.empty}</p>
+          ) : (
+            hits.map((h, i) => (
+              <div key={h.id}>
+                {(i === 0 || hits[i - 1].group !== h.group) && (
+                  <div className="cmdk-group">{h.group}</div>
+                )}
+                <button
+                  id={"hit-" + h.id}
+                  role="option"
+                  aria-selected={i === active}
+                  className={"cmdk-item " + (i === active ? "active" : "")}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => go(h.path)}
+                >
+                  <span>
+                    {h.label}
+                    <small className="cell-sub">{h.detail}</small>
+                  </span>
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </Dialog>
   );
