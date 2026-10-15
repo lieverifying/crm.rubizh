@@ -298,6 +298,9 @@ textarea {
   max-width: 1480px;
   width: 100%;
   margin: 0 auto;
+  /* The footer starts below the first screen, so loaded data never pushes it (CLS). */
+  flex: 1 0 auto;
+  min-height: calc(100vh - 64px);
 }
 .footer {
   padding: 12px 28px 24px;
