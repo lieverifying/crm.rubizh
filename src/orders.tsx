@@ -305,7 +305,9 @@ export function Orders() {
       )}
       <Panel>
         <Tabs
-          items={TABS.map((k) => [k, t.tabs[k]] as [string, string])}
+          items={TABS.filter(
+            (k) => k !== "payment" || can("order.finance.view"),
+          ).map((k) => [k, t.tabs[k]] as [string, string])}
           value={view}
           onChange={(v) => {
             set({ view: v === "all" ? null : v });
@@ -362,7 +364,9 @@ export function Orders() {
           >
             <option value="">Увага: усі</option>
             <option value="confirmation">Чекають підтвердження</option>
-            <option value="payment_review">Оплата потребує перевірки</option>
+            {can("order.finance.view") && (
+              <option value="payment_review">Оплата потребує перевірки</option>
+            )}
             <option value="delivery_review">Посилка потребує розбору</option>
             <option value="ready_to_ship">Готові до відправки</option>
             <option value="no_supplier">Без постачальника</option>

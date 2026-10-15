@@ -126,11 +126,14 @@ export function Status3({
   display: Status3T;
   captions?: boolean;
 }) {
-  const parts: [string, StatusPart][] = [
-    ["Замовлення", display.order],
-    ["Оплата", display.payment],
-    ["Доставка", display.delivery],
-  ];
+  // Roles without finance access get the payment part as HIDDEN (§8): it is not shown at all.
+  const parts = (
+    [
+      ["Замовлення", display.order],
+      ["Оплата", display.payment],
+      ["Доставка", display.delivery],
+    ] as [string, StatusPart][]
+  ).filter(([, p]) => p && p.code !== "HIDDEN");
   return (
     <div className="status3">
       {parts.map(([name, p]) => (

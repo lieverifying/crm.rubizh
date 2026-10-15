@@ -372,29 +372,35 @@ export function OrderCard() {
             ))}
             {o.finance && (
               <div className="totals">
-                <div>
-                  <span>Вартість товарів</span>
-                  <span className="num">{money(o.finance.goods_minor)}</span>
-                </div>
-                <div>
-                  <span>
-                    Знижка
-                    {o.finance.discount_type
-                      ? ` (${t.discount[o.finance.discount_type]}${o.finance.promo_code ? " " + o.finance.promo_code : ""})`
-                      : ""}
-                  </span>
-                  <span className="num">
-                    −{money(o.finance.discount_minor)}
-                  </span>
-                </div>
-                <div>
-                  <span>Доставка</span>
-                  <span className="sub">
-                    {o.finance.shipping_minor
-                      ? money(o.finance.shipping_minor)
-                      : o.finance.shipping_note}
-                  </span>
-                </div>
+                {can("order.finance.view") && (
+                  <div>
+                    <span>Вартість товарів</span>
+                    <span className="num">{money(o.finance.goods_minor)}</span>
+                  </div>
+                )}
+                {can("order.finance.view") && (
+                  <>
+                    <div>
+                      <span>
+                        Знижка
+                        {o.finance.discount_type
+                          ? ` (${t.discount[o.finance.discount_type]}${o.finance.promo_code ? " " + o.finance.promo_code : ""})`
+                          : ""}
+                      </span>
+                      <span className="num">
+                        −{money(o.finance.discount_minor)}
+                      </span>
+                    </div>
+                    <div>
+                      <span>Доставка</span>
+                      <span className="sub">
+                        {o.finance.shipping_minor
+                          ? money(o.finance.shipping_minor)
+                          : o.finance.shipping_note}
+                      </span>
+                    </div>
+                  </>
+                )}
                 <div className="grand">
                   <span>Разом</span>
                   <span className="num">{money(o.finance.total_minor)}</span>
@@ -591,7 +597,7 @@ export function OrderCard() {
               </dd>
             </dl>
           </Panel>
-          {o.finance && (
+          {o.finance && can("order.finance.view") && (
             <Panel title="Фінанси">
               <dl className="panel-body dl">
                 <dt>Спосіб оплати</dt>
