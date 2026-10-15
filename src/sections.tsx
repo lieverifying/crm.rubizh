@@ -8,6 +8,7 @@ import type {
   Order,
   ShipmentDetail,
   ShipmentList,
+  WholesaleList,
 } from "./contract.gen";
 import {
   api,
@@ -63,6 +64,7 @@ export function Customers() {
     queryKey: ["customers", query],
     queryFn: () => api<CustomerList>("/customers" + params(query)),
     placeholderData: (p) => p,
+    enabled: segment !== "WHOLESALE",
   });
   const [full, setFull] = useState(false);
   const columns: Column<Cust>[] = [
@@ -151,50 +153,62 @@ export function Customers() {
             ["REPEAT", "Повторні"],
             ["NEW", "Нові"],
             ["SLEEPING", "Сплячі"],
+            ...(can("wholesale.view")
+              ? [["WHOLESALE", "Оптові заявки"] as [string, string]]
+              : []),
           ]}
           value={segment}
           onChange={(v) => setSp(v ? { segment: v } : {})}
         />
-        <div className="toolbar">
-          <SearchBox
-            value={text}
-            onChange={setText}
-            placeholder="Ім’я, email або телефон"
-          />
-        </div>
-        {list.isPending ? (
-          <Loading rows={5} />
-        ) : list.isError ? (
-          <ErrorBox error={list.error} onRetry={() => void list.refetch()} />
-        ) : !list.data.rows.length ? (
-          <Empty />
+        {segment === "WHOLESALE" ? (
+          <Wholesale />
         ) : (
           <>
-            <DataView
-              rows={list.data.rows as Cust[]}
-              columns={columns}
-              rowKey={(c) => c.id}
-              card={(c) => (
-                <Link
-                  className="mcard"
-                  to={"/customers/" + encodeURIComponent(c.id)}
-                >
-                  <div className="mcard-top">
-                    <strong>{c.name || c.email}</strong>
-                    <Pill code="">{t.segment[c.segment]}</Pill>
-                  </div>
-                  <span className="sub">
-                    {c.phone_masked} · {c.orders} замовл.
-                  </span>
-                </Link>
-              )}
-            />
-            <Pager
-              page={list.data.pagination}
-              onChange={(n) =>
-                setSp({ ...(segment ? { segment } : {}), page: String(n) })
-              }
-            />
+            <div className="toolbar">
+              <SearchBox
+                value={text}
+                onChange={setText}
+                placeholder="Ім’я, email або телефон"
+              />
+            </div>
+            {list.isPending ? (
+              <Loading rows={5} />
+            ) : list.isError ? (
+              <ErrorBox
+                error={list.error}
+                onRetry={() => void list.refetch()}
+              />
+            ) : !list.data.rows.length ? (
+              <Empty />
+            ) : (
+              <>
+                <DataView
+                  rows={list.data.rows as Cust[]}
+                  columns={columns}
+                  rowKey={(c) => c.id}
+                  card={(c) => (
+                    <Link
+                      className="mcard"
+                      to={"/customers/" + encodeURIComponent(c.id)}
+                    >
+                      <div className="mcard-top">
+                        <strong>{c.name || c.email}</strong>
+                        <Pill code="">{t.segment[c.segment]}</Pill>
+                      </div>
+                      <span className="sub">
+                        {c.phone_masked} · {c.orders} замовл.
+                      </span>
+                    </Link>
+                  )}
+                />
+                <Pager
+                  page={list.data.pagination}
+                  onChange={(n) =>
+                    setSp({ ...(segment ? { segment } : {}), page: String(n) })
+                  }
+                />
+              </>
+            )}
           </>
         )}
       </Panel>
@@ -211,6 +225,207 @@ export function Customers() {
             Файл міститиме повні телефони та email. Зберігайте його лише на
             захищеному пристрої. Дія записується в журнал.
           </Note>
+        </ActionDialog>
+      )}
+    </>
+  );
+}
+
+// D-54: storefront «Запит на прорахунок» requests (SITE table), worked by OWNER / MANAGER.
+type WholesaleRow = {
+  id: number;
+  number: string;
+  name: string;
+  phone: string;
+  buyer_type: string;
+  tax_id: string;
+  email: string;
+  kits: number | null;
+  composition: string;
+  priority: string;
+  state: string;
+  manager_note: string;
+  created_at: string;
+};
+const WS_STATE: Record<string, string> = {
+  NEW: "Нова",
+  IN_PROGRESS: "У роботі",
+  QUOTED: "Прорахунок надіслано",
+  WON: "Замовлення",
+  LOST: "Відмова",
+};
+const WS_BUYER: Record<string, string> = {
+  PERSON: "Фізособа",
+  FOP: "ФОП",
+  LLC: "ТОВ",
+  CHARITY: "Благодійний фонд",
+  MILITARY: "Військова частина",
+};
+function Wholesale() {
+  const can = useCan();
+  const qc = useQueryClient();
+  const [sp, setSp] = useSearchParams();
+  const page = sp.get("page") ?? "1";
+  const list = useQuery({
+    queryKey: ["wholesale", page],
+    queryFn: () =>
+      api<WholesaleList>("/wholesale" + params({ page, limit: "25" })),
+    placeholderData: (p) => p,
+  });
+  const [edit, setEdit] = useState<WholesaleRow | null>(null);
+  const [state, setState] = useState("NEW");
+  const [note, setNote] = useState("");
+  const open = (r: WholesaleRow) => {
+    setEdit(r);
+    setState(r.state);
+    setNote(r.manager_note);
+  };
+  const columns: Column<WholesaleRow>[] = [
+    {
+      key: "number",
+      title: "Заявка",
+      render: (r) => (
+        <>
+          <span className="num">{r.number}</span>
+          <small>{date(r.created_at)}</small>
+        </>
+      ),
+    },
+    {
+      key: "buyer",
+      title: "Покупець",
+      render: (r) => (
+        <>
+          {r.name}
+          <small>
+            {WS_BUYER[r.buyer_type] ?? r.buyer_type}
+            {r.tax_id ? " · " + r.tax_id : ""}
+          </small>
+        </>
+      ),
+    },
+    {
+      key: "phone",
+      title: "Контакт",
+      render: (r) => (
+        <>
+          <a className="link num" href={telHref(r.phone)}>
+            {r.phone}
+          </a>
+          {r.email && <small>{r.email}</small>}
+        </>
+      ),
+    },
+    {
+      key: "composition",
+      title: "Склад",
+      render: (r) => (
+        <>
+          {r.kits ? r.kits + " компл. · " : ""}
+          {r.composition}
+          <small>
+            {r.priority === "DONATION" ? "Більший донат бригаді" : "Нижча ціна"}
+          </small>
+        </>
+      ),
+    },
+    {
+      key: "state",
+      title: "Статус",
+      render: (r) => (
+        <Pill
+          code={
+            r.state === "WON" ? "PAID" : r.state === "NEW" ? "AWAITING" : ""
+          }
+        >
+          {WS_STATE[r.state] ?? r.state}
+        </Pill>
+      ),
+    },
+    {
+      key: "act",
+      title: "",
+      render: (r) =>
+        can("wholesale.manage") ? (
+          <button className="btn sm" onClick={() => open(r)}>
+            Змінити
+          </button>
+        ) : null,
+    },
+  ];
+  if (list.isPending) return <Loading rows={5} />;
+  if (list.isError)
+    return <ErrorBox error={list.error} onRetry={() => void list.refetch()} />;
+  const rows = list.data.rows as WholesaleRow[];
+  return (
+    <>
+      <Note>
+        Заявки з форми «Запит на прорахунок» на головній. Не зберігайте в
+        нотатках номери частин, місця дислокації чи прізвища військових.
+      </Note>
+      {!rows.length ? (
+        <Empty />
+      ) : (
+        <>
+          <DataView
+            rows={rows}
+            columns={columns}
+            rowKey={(r) => String(r.id)}
+            card={(r) => (
+              <div className="mcard">
+                <div className="mcard-top">
+                  <strong className="num">{r.number}</strong>
+                  <Pill code="">{WS_STATE[r.state] ?? r.state}</Pill>
+                </div>
+                <span>
+                  {r.name} · {WS_BUYER[r.buyer_type] ?? r.buyer_type}
+                </span>
+                <a className="link num" href={telHref(r.phone)}>
+                  {r.phone}
+                </a>
+                <span className="sub">{r.composition}</span>
+                {can("wholesale.manage") && (
+                  <button className="btn sm" onClick={() => open(r)}>
+                    Змінити
+                  </button>
+                )}
+              </div>
+            )}
+          />
+          <Pager
+            page={list.data.pagination}
+            onChange={(n) => setSp({ segment: "WHOLESALE", page: String(n) })}
+          />
+        </>
+      )}
+      {edit && (
+        <ActionDialog
+          title={"Заявка " + edit.number}
+          onClose={() => setEdit(null)}
+          onSubmit={async ({ key }) => {
+            await api("/wholesale/" + edit.id, { state, note }, { idem: key });
+            await qc.invalidateQueries({ queryKey: ["wholesale"] });
+          }}
+        >
+          <label className="field">
+            Статус
+            <select value={state} onChange={(e) => setState(e.target.value)}>
+              {Object.entries(WS_STATE).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Нотатка менеджера
+            <textarea
+              maxLength={1000}
+              rows={3}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
         </ActionDialog>
       )}
     </>
