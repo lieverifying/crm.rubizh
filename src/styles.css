@@ -1145,3 +1145,5 @@ table.data td small,
     grid-template-columns: minmax(0, 1fr);
   }
 }
+table.data .link { white-space: nowrap; }
+table.data td small { white-space: nowrap; }

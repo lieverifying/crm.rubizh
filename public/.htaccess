@@ -5,8 +5,24 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.html [L]
 <IfModule mod_headers.c>
+# Stage 4: no 'unsafe-inline' — the production build has no inline scripts or styles (React sets styles via CSSOM).
+Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'"
 Header always set X-Robots-Tag "noindex, nofollow"
 Header always set X-Content-Type-Options "nosniff"
-Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+Header always set X-Frame-Options "DENY"
 Header always set Referrer-Policy "no-referrer"
+Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+Header always set Cross-Origin-Opener-Policy "same-origin"
 </IfModule>
+# The HTML shell is never cached; hashed assets may be.
+<FilesMatch "^index\.html$">
+<IfModule mod_headers.c>
+Header always set Cache-Control "no-store, private"
+</IfModule>
+</FilesMatch>
+<FilesMatch "\.(js|css|woff2?)$">
+<IfModule mod_headers.c>
+Header set Cache-Control "public, max-age=31536000, immutable"
+</IfModule>
+</FilesMatch>
