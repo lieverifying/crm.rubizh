@@ -1154,3 +1154,13 @@ table.data .link {
 table.data td small {
   white-space: nowrap;
 }
+
+/* 5-3: invoice PDF is blocked until the owner fills the VAT status in the SITE settings. */
+.callout.warning {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 600;
+}

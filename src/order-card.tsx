@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Copy, ExternalLink, Phone, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  Copy,
+  Download,
+  ExternalLink,
+  Phone,
+  RefreshCw,
+} from "lucide-react";
 import type { AssigneeList, Order, ProductDetail } from "./contract.gen";
 import {
   api,
   ApiError,
   copy,
   date,
+  download,
   money,
   params,
   telHref,
@@ -274,7 +282,29 @@ export function OrderCard() {
               {t.actions.refund}
             </Link>
           )}
+        {o.invoice_pdf?.available && (
+          <button
+            className="btn"
+            onClick={() =>
+              download("/orders/" + o.id + "/invoice-pdf").catch((e) =>
+                notify(
+                  e instanceof ApiError ? e.message : t.serviceUnavailable,
+                  "error",
+                ),
+              )
+            }
+          >
+            <Download size={16} aria-hidden="true" /> Завантажити рахунок (PDF)
+          </button>
+        )}
       </div>
+      {o.invoice_pdf &&
+        !o.invoice_pdf.available &&
+        o.invoice_pdf.reason === "VAT_NOTE_MISSING" && (
+          <p className="callout warning" role="status">
+            {o.invoice_pdf.message}
+          </p>
+        )}
       <div className="grid-2">
         <div className="stack">
           <Panel
