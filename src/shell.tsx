@@ -46,6 +46,7 @@ import type {
 } from "./contract.gen";
 import {
   api,
+  holdWhileLeaving,
   initials,
   params,
   useCan,
@@ -56,67 +57,111 @@ import { Dialog, ErrorBox, Loading, Toast, useDebounce } from "./kit";
 import { AcceptToken, Login, StepUpHost, TotpEnroll } from "./auth";
 import { t } from "./i18n";
 
-const Overview = lazy(() =>
-  import("./overview").then((m) => ({ default: m.Overview })),
+const Overview = lazy(
+  holdWhileLeaving(() =>
+    import("./overview").then((m) => ({ default: m.Overview })),
+  ),
 );
-const Analytics = lazy(() =>
-  import("./overview").then((m) => ({ default: m.Analytics })),
+const Analytics = lazy(
+  holdWhileLeaving(() =>
+    import("./overview").then((m) => ({ default: m.Analytics })),
+  ),
 );
-const Orders = lazy(() =>
-  import("./orders").then((m) => ({ default: m.Orders })),
+const Orders = lazy(
+  holdWhileLeaving(() =>
+    import("./orders").then((m) => ({ default: m.Orders })),
+  ),
 );
-const OrderCard = lazy(() =>
-  import("./order-card").then((m) => ({ default: m.OrderCard })),
+const OrderCard = lazy(
+  holdWhileLeaving(() =>
+    import("./order-card").then((m) => ({ default: m.OrderCard })),
+  ),
 );
-const OrderCreate = lazy(() =>
-  import("./order-create").then((m) => ({ default: m.OrderCreate })),
+const OrderCreate = lazy(
+  holdWhileLeaving(() =>
+    import("./order-create").then((m) => ({ default: m.OrderCreate })),
+  ),
 );
-const Payments = lazy(() =>
-  import("./money").then((m) => ({ default: m.Payments })),
+const Payments = lazy(
+  holdWhileLeaving(() =>
+    import("./money").then((m) => ({ default: m.Payments })),
+  ),
 );
-const PaymentCard = lazy(() =>
-  import("./money").then((m) => ({ default: m.PaymentCard })),
+const PaymentCard = lazy(
+  holdWhileLeaving(() =>
+    import("./money").then((m) => ({ default: m.PaymentCard })),
+  ),
 );
-const Returns = lazy(() =>
-  import("./money").then((m) => ({ default: m.Returns })),
+const Returns = lazy(
+  holdWhileLeaving(() =>
+    import("./money").then((m) => ({ default: m.Returns })),
+  ),
 );
-const ReturnCard = lazy(() =>
-  import("./money").then((m) => ({ default: m.ReturnCard })),
+const ReturnCard = lazy(
+  holdWhileLeaving(() =>
+    import("./money").then((m) => ({ default: m.ReturnCard })),
+  ),
 );
-const Customers = lazy(() =>
-  import("./sections").then((m) => ({ default: m.Customers })),
+const Customers = lazy(
+  holdWhileLeaving(() =>
+    import("./sections").then((m) => ({ default: m.Customers })),
+  ),
 );
-const CustomerCard = lazy(() =>
-  import("./sections").then((m) => ({ default: m.CustomerCard })),
+const CustomerCard = lazy(
+  holdWhileLeaving(() =>
+    import("./sections").then((m) => ({ default: m.CustomerCard })),
+  ),
 );
-const Delivery = lazy(() =>
-  import("./sections").then((m) => ({ default: m.Delivery })),
+const Delivery = lazy(
+  holdWhileLeaving(() =>
+    import("./sections").then((m) => ({ default: m.Delivery })),
+  ),
 );
-const ShipmentCard = lazy(() =>
-  import("./sections").then((m) => ({ default: m.ShipmentCard })),
+const ShipmentCard = lazy(
+  holdWhileLeaving(() =>
+    import("./sections").then((m) => ({ default: m.ShipmentCard })),
+  ),
 );
-const Products = lazy(() =>
-  import("./catalog").then((m) => ({ default: m.Products })),
+const Products = lazy(
+  holdWhileLeaving(() =>
+    import("./catalog").then((m) => ({ default: m.Products })),
+  ),
 );
-const ProductCard = lazy(() =>
-  import("./catalog").then((m) => ({ default: m.ProductCard })),
+const ProductCard = lazy(
+  holdWhileLeaving(() =>
+    import("./catalog").then((m) => ({ default: m.ProductCard })),
+  ),
 );
-const Suppliers = lazy(() =>
-  import("./catalog").then((m) => ({ default: m.Suppliers })),
+const Suppliers = lazy(
+  holdWhileLeaving(() =>
+    import("./catalog").then((m) => ({ default: m.Suppliers })),
+  ),
 );
-const SupplierCard = lazy(() =>
-  import("./catalog").then((m) => ({ default: m.SupplierCard })),
+const SupplierCard = lazy(
+  holdWhileLeaving(() =>
+    import("./catalog").then((m) => ({ default: m.SupplierCard })),
+  ),
 );
-const Tasks = lazy(() => import("./work").then((m) => ({ default: m.Tasks })));
-const Notifications = lazy(() =>
-  import("./work").then((m) => ({ default: m.Notifications })),
+const Tasks = lazy(
+  holdWhileLeaving(() => import("./work").then((m) => ({ default: m.Tasks }))),
 );
-const Activity = lazy(() =>
-  import("./work").then((m) => ({ default: m.Activity })),
+const Notifications = lazy(
+  holdWhileLeaving(() =>
+    import("./work").then((m) => ({ default: m.Notifications })),
+  ),
 );
-const Staff = lazy(() => import("./team").then((m) => ({ default: m.Staff })));
-const SettingsPage = lazy(() =>
-  import("./team").then((m) => ({ default: m.SettingsPage })),
+const Activity = lazy(
+  holdWhileLeaving(() =>
+    import("./work").then((m) => ({ default: m.Activity })),
+  ),
+);
+const Staff = lazy(
+  holdWhileLeaving(() => import("./team").then((m) => ({ default: m.Staff }))),
+);
+const SettingsPage = lazy(
+  holdWhileLeaving(() =>
+    import("./team").then((m) => ({ default: m.SettingsPage })),
+  ),
 );
 
 type NavItem = {

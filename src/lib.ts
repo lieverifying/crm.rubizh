@@ -48,6 +48,26 @@ const leavingListeners = new Set<(leaving: boolean) => void>();
 export function onLeaving(listener: (leaving: boolean) => void): void {
   leavingListeners.add(listener);
 }
+/**
+ * CRM-5.2: a section chunk (React.lazy) whose load is cut off because the page is being left. WebKit rejects such an
+ * import («Importing a module script failed.») while React still runs, and React reports the render error as uncaught.
+ * While the page is being left the failure is held back; if the page is not left after all (a download, a page restored
+ * from the back/forward cache), it is released exactly as before.
+ */
+export function holdWhileLeaving<T>(load: () => Promise<T>): () => Promise<T> {
+  return () =>
+    load().catch((error: unknown) => {
+      if (!leaving) throw error;
+      return new Promise<T>((_, reject) => {
+        const release = (now: boolean) => {
+          if (now) return;
+          leavingListeners.delete(release);
+          reject(error);
+        };
+        leavingListeners.add(release);
+      });
+    });
+}
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => setLeaving(true));
   window.addEventListener("pagehide", () => setLeaving(true));
