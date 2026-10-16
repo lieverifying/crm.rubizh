@@ -43,8 +43,14 @@ const normalizePhone = (v: string) => {
   return /^380\d{9}$/.test(d) ? "+" + d : null;
 };
 
-/** Telephone order (ТЗ 7.3): the server prices it with the same service as the website; no manual discount or delivery fee. */
+/** A new mode (phone order / order from another wholesale request) starts with a clean form. */
 export function OrderCreate() {
+  const [sp] = useSearchParams();
+  return <OrderCreateForm key={sp.get("wholesale") ?? "phone"} />;
+}
+
+/** Telephone order (ТЗ 7.3): the server prices it with the same service as the website; no manual discount or delivery fee. */
+function OrderCreateForm() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { notify } = useWorkspace();
@@ -152,10 +158,10 @@ export function OrderCreate() {
             { idem: attempt.key },
           )
         : await api<Order>("/orders", body, { idem: attempt.key });
-      if (wsId) await qc.invalidateQueries({ queryKey: ["wholesale"] });
       attempt.renew();
       notify("Замовлення " + order.number + " створено");
       navigate("/orders/" + order.id);
+      if (wsId) void qc.invalidateQueries({ queryKey: ["wholesale"] });
     } catch (e) {
       if (e instanceof ApiError && e.code === "PRICE_CHANGED")
         setQuote(
@@ -339,6 +345,14 @@ export function OrderCreate() {
             <div className="panel-body stack">
               {wsId ? (
                 <>
+                  {ws.isError && (
+                    <Note tone="bad">
+                      {ws.error instanceof ApiError
+                        ? ws.error.message
+                        : t.serviceUnavailable}{" "}
+                      Заявку не відкрито — поверніться до списку заявок.
+                    </Note>
+                  )}
                   <Note tone="info">
                     {wsReq
                       ? "Заявка " +
@@ -348,7 +362,9 @@ export function OrderCreate() {
                         ", " +
                         (wsReq.phone_masked ?? "—") +
                         ". Покупець і телефон беруться із заявки."
-                      : "Завантажуємо заявку…"}
+                      : ws.isError
+                        ? "Заявка недоступна."
+                        : "Завантажуємо заявку…"}
                   </Note>
                   <label className="field">
                     Ім’я та прізвище одержувача

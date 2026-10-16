@@ -19,9 +19,9 @@ import {
   date,
   download,
   money,
-  newKey,
   params,
   telHref,
+  useAttemptKey,
   useCan,
   useWorkspace,
 } from "./lib";
@@ -308,7 +308,7 @@ function Wholesale() {
       api<WholesaleList>("/wholesale" + params({ page, limit: "25" })),
     placeholderData: (p) => p,
   });
-  const [open, setOpen] = useState<WholesaleRow | null>(null);
+  const [openId, setOpenId] = useState<number | null>(null);
   const columns: Column<WholesaleRow>[] = [
     {
       key: "number",
@@ -383,7 +383,7 @@ function Wholesale() {
       key: "act",
       title: "",
       render: (r) => (
-        <button className="btn sm" onClick={() => setOpen(r)}>
+        <button className="btn sm" onClick={() => setOpenId(r.id)}>
           {can("wholesale.manage") ? "Відкрити" : "Деталі"}
         </button>
       ),
@@ -421,7 +421,7 @@ function Wholesale() {
                 <span className="sub">
                   {r.assignee ? r.assignee.name : "Не призначено"}
                 </span>
-                <button className="btn sm" onClick={() => setOpen(r)}>
+                <button className="btn sm" onClick={() => setOpenId(r.id)}>
                   {can("wholesale.manage") ? "Відкрити" : "Деталі"}
                 </button>
               </div>
@@ -433,7 +433,13 @@ function Wholesale() {
           />
         </>
       )}
-      {open && <WholesaleCard row={open} onClose={() => setOpen(null)} />}
+      {openId !== null && rows.some((r) => r.id === openId) && (
+        <WholesaleCard
+          key={openId}
+          row={rows.find((r) => r.id === openId)!}
+          onClose={() => setOpenId(null)}
+        />
+      )}
     </>
   );
 }
@@ -463,6 +469,7 @@ function WholesaleCard({
   const [assignee, setAssignee] = useState(row.assignee?.id ?? "");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  const commentKey = useAttemptKey();
   const notes = (detail.data?.notes ?? []) as {
     id: number;
     body: string;
@@ -475,16 +482,27 @@ function WholesaleCard({
       await api(
         "/wholesale/" + row.id + "/note",
         { body: comment.trim() },
-        { idem: newKey() },
+        { idem: commentKey.key },
       );
+      commentKey.renew();
       setComment("");
       await qc.invalidateQueries({ queryKey: ["wholesale"] });
     } catch (e) {
+      commentKey.afterError(e);
       notify((e as Error).message, "error");
     } finally {
       setBusy(false);
     }
   };
+  // The current assignee stays visible even while the list loads or when they are no longer assignable.
+  const assigneeRows = (assignees.data?.rows ?? []) as {
+    id: string;
+    name: string;
+  }[];
+  const assigneeOptions =
+    row.assignee && !assigneeRows.some((u) => u.id === row.assignee!.id)
+      ? [row.assignee, ...assigneeRows]
+      : assigneeRows;
   return (
     <ActionDialog
       title={"Заявка " + row.number}
@@ -528,9 +546,7 @@ function WholesaleCard({
               onChange={(e) => setAssignee(e.target.value)}
             >
               <option value="">Не призначено</option>
-              {(
-                (assignees.data?.rows ?? []) as { id: string; name: string }[]
-              ).map((u) => (
+              {assigneeOptions.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
                 </option>
@@ -560,7 +576,14 @@ function WholesaleCard({
       )}
       <section aria-label="Коментарі">
         <h3>Коментарі</h3>
-        {notes.length ? (
+        {detail.isPending ? (
+          <Loading rows={2} />
+        ) : detail.isError ? (
+          <ErrorBox
+            error={detail.error}
+            onRetry={() => void detail.refetch()}
+          />
+        ) : notes.length ? (
           <ul className="stack">
             {notes.map((n) => (
               <li key={n.id}>
