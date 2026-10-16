@@ -8,6 +8,8 @@ import type {
   Order,
   ShipmentDetail,
   ShipmentList,
+  AssigneeList,
+  WholesaleDetail,
   WholesaleList,
 } from "./contract.gen";
 import {
@@ -17,6 +19,7 @@ import {
   date,
   download,
   money,
+  newKey,
   params,
   telHref,
   useCan,
@@ -246,13 +249,15 @@ type WholesaleRow = {
   state: string;
   manager_note: string;
   created_at: string;
+  assignee: { id: string; name: string } | null;
+  order: { id: number; number: string } | null;
 };
+/** OD-4.6: нова / в роботі / КП надіслано / закрита. */
 const WS_STATE: Record<string, string> = {
   NEW: "Нова",
-  IN_PROGRESS: "У роботі",
-  QUOTED: "Прорахунок надіслано",
-  WON: "Замовлення",
-  LOST: "Відмова",
+  IN_PROGRESS: "В роботі",
+  QUOTE_SENT: "КП надіслано",
+  CLOSED: "Закрита",
 };
 const WS_BUYER: Record<string, string> = {
   PERSON: "Фізособа",
@@ -295,7 +300,6 @@ function WsPhone({ r }: { r: WholesaleRow }) {
 }
 function Wholesale() {
   const can = useCan();
-  const qc = useQueryClient();
   const [sp, setSp] = useSearchParams();
   const page = sp.get("page") ?? "1";
   const list = useQuery({
@@ -304,14 +308,7 @@ function Wholesale() {
       api<WholesaleList>("/wholesale" + params({ page, limit: "25" })),
     placeholderData: (p) => p,
   });
-  const [edit, setEdit] = useState<WholesaleRow | null>(null);
-  const [state, setState] = useState("NEW");
-  const [note, setNote] = useState("");
-  const open = (r: WholesaleRow) => {
-    setEdit(r);
-    setState(r.state);
-    setNote(r.manager_note);
-  };
+  const [open, setOpen] = useState<WholesaleRow | null>(null);
   const columns: Column<WholesaleRow>[] = [
     {
       key: "number",
@@ -363,24 +360,33 @@ function Wholesale() {
       key: "state",
       title: "Статус",
       render: (r) => (
-        <Pill
-          code={
-            r.state === "WON" ? "PAID" : r.state === "NEW" ? "AWAITING" : ""
-          }
-        >
-          {WS_STATE[r.state] ?? r.state}
-        </Pill>
+        <>
+          <Pill
+            code={
+              r.state === "CLOSED" ? "" : r.state === "NEW" ? "AWAITING" : ""
+            }
+          >
+            {WS_STATE[r.state] ?? r.state}
+          </Pill>
+          <small>{r.assignee ? r.assignee.name : "Не призначено"}</small>
+          {r.order && (
+            <small>
+              <Link className="link" to={"/orders/" + r.order.id}>
+                {r.order.number}
+              </Link>
+            </small>
+          )}
+        </>
       ),
     },
     {
       key: "act",
       title: "",
-      render: (r) =>
-        can("wholesale.manage") ? (
-          <button className="btn sm" onClick={() => open(r)}>
-            Змінити
-          </button>
-        ) : null,
+      render: (r) => (
+        <button className="btn sm" onClick={() => setOpen(r)}>
+          {can("wholesale.manage") ? "Відкрити" : "Деталі"}
+        </button>
+      ),
     },
   ];
   if (list.isPending) return <Loading rows={5} />;
@@ -391,7 +397,7 @@ function Wholesale() {
     <>
       <Note>
         Заявки з форми «Запит на прорахунок» на головній. Не зберігайте в
-        нотатках номери частин, місця дислокації чи прізвища військових.
+        коментарях номери частин, місця дислокації чи прізвища військових.
       </Note>
       {!rows.length ? (
         <Empty />
@@ -412,11 +418,12 @@ function Wholesale() {
                 </span>
                 <WsPhone r={r} />
                 <span className="sub">{r.composition}</span>
-                {can("wholesale.manage") && (
-                  <button className="btn sm" onClick={() => open(r)}>
-                    Змінити
-                  </button>
-                )}
+                <span className="sub">
+                  {r.assignee ? r.assignee.name : "Не призначено"}
+                </span>
+                <button className="btn sm" onClick={() => setOpen(r)}>
+                  {can("wholesale.manage") ? "Відкрити" : "Деталі"}
+                </button>
               </div>
             )}
           />
@@ -426,15 +433,84 @@ function Wholesale() {
           />
         </>
       )}
-      {edit && (
-        <ActionDialog
-          title={"Заявка " + edit.number}
-          onClose={() => setEdit(null)}
-          onSubmit={async ({ key }) => {
-            await api("/wholesale/" + edit.id, { state, note }, { idem: key });
-            await qc.invalidateQueries({ queryKey: ["wholesale"] });
-          }}
-        >
+      {open && <WholesaleCard row={open} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+/** OD-4.6: status, assignee, comments and history of one request; an order is made from it in «Нове замовлення». */
+function WholesaleCard({
+  row,
+  onClose,
+}: {
+  row: WholesaleRow;
+  onClose: () => void;
+}) {
+  const can = useCan();
+  const qc = useQueryClient();
+  const { notify } = useWorkspace();
+  const manage = can("wholesale.manage");
+  const detail = useQuery({
+    queryKey: ["wholesale", "detail", String(row.id)],
+    queryFn: () => api<WholesaleDetail>("/wholesale/" + row.id),
+  });
+  const assignees = useQuery({
+    queryKey: ["assignees"],
+    queryFn: () => api<AssigneeList>("/staff/assignees"),
+    enabled: manage,
+  });
+  const [state, setState] = useState(row.state);
+  const [assignee, setAssignee] = useState(row.assignee?.id ?? "");
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notes = (detail.data?.notes ?? []) as {
+    id: number;
+    body: string;
+    author: string | null;
+    created_at: string;
+  }[];
+  const addComment = async () => {
+    setBusy(true);
+    try {
+      await api(
+        "/wholesale/" + row.id + "/note",
+        { body: comment.trim() },
+        { idem: newKey() },
+      );
+      setComment("");
+      await qc.invalidateQueries({ queryKey: ["wholesale"] });
+    } catch (e) {
+      notify((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <ActionDialog
+      title={"Заявка " + row.number}
+      wide
+      submitText="Зберегти"
+      disabled={!manage}
+      onClose={onClose}
+      onSubmit={async ({ key }) => {
+        await api(
+          "/wholesale/" + row.id,
+          { state, assignee: assignee || null },
+          { idem: key },
+        );
+        await qc.invalidateQueries({ queryKey: ["wholesale"] });
+      }}
+    >
+      <p>
+        {row.name} · {WS_BUYER[row.buyer_type] ?? row.buyer_type} ·{" "}
+        <WsPhone r={row} />
+      </p>
+      <p className="muted">
+        {row.kits ? row.kits + " компл. · " : ""}
+        {row.composition}
+      </p>
+      {manage && (
+        <>
           <label className="field">
             Статус
             <select value={state} onChange={(e) => setState(e.target.value)}>
@@ -446,17 +522,81 @@ function Wholesale() {
             </select>
           </label>
           <label className="field">
-            Нотатка менеджера
-            <textarea
-              maxLength={1000}
-              rows={3}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
+            Відповідальний
+            <select
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+            >
+              <option value="">Не призначено</option>
+              {(
+                (assignees.data?.rows ?? []) as { id: string; name: string }[]
+              ).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
           </label>
-        </ActionDialog>
+        </>
       )}
-    </>
+      {row.order ? (
+        <p>
+          Замовлення:{" "}
+          <Link className="link" to={"/orders/" + row.order.id}>
+            {row.order.number}
+          </Link>
+        </p>
+      ) : (
+        manage &&
+        can("order.create") && (
+          <Link
+            className="btn small"
+            to={"/orders/new?wholesale=" + row.id}
+            onClick={onClose}
+          >
+            Створити замовлення
+          </Link>
+        )
+      )}
+      <section aria-label="Коментарі">
+        <h3>Коментарі</h3>
+        {notes.length ? (
+          <ul className="stack">
+            {notes.map((n) => (
+              <li key={n.id}>
+                {n.body}
+                <small className="cell-sub">
+                  {(n.author ?? "—") + " · " + date(n.created_at)}
+                </small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">Коментарів ще немає.</p>
+        )}
+        {manage && (
+          <div className="row">
+            <label className="field" style={{ flex: 1 }}>
+              Новий коментар
+              <textarea
+                maxLength={4000}
+                rows={2}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="btn small"
+              disabled={busy || !comment.trim()}
+              onClick={() => void addComment()}
+            >
+              Додати коментар
+            </button>
+          </div>
+        )}
+      </section>
+    </ActionDialog>
   );
 }
 

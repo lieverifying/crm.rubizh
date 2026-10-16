@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import type {
   CustomerList,
   Order,
   ProductDetail,
   ProductList,
+  WholesaleDetail,
 } from "./contract.gen";
 import {
   api,
@@ -45,14 +46,33 @@ const normalizePhone = (v: string) => {
 /** Telephone order (ТЗ 7.3): the server prices it with the same service as the website; no manual discount or delivery fee. */
 export function OrderCreate() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { notify } = useWorkspace();
   const attempt = useAttemptKey();
+  // OD-4.6: «?wholesale=<id>» — an order made from a wholesale request; the buyer and the phone come from the request.
+  const [sp] = useSearchParams();
+  const wsId = sp.get("wholesale");
+  const ws = useQuery({
+    queryKey: ["wholesale", "detail", wsId],
+    queryFn: () => api<WholesaleDetail>("/wholesale/" + wsId),
+    enabled: !!wsId,
+  });
+  const wsReq = ws.data?.request as
+    | {
+        number: string;
+        name: string;
+        phone_masked: string | null;
+        email: string;
+      }
+    | undefined;
   const [name, setName] = useState(""),
     [phone, setPhone] = useState(""),
     [email, setEmail] = useState(""),
     [recipient, setRecipient] = useState("");
   const [channel, setChannel] = useState("phone"),
-    [payment, setPayment] = useState<"card" | "invoice">("card"),
+    [payment, setPayment] = useState<"card" | "invoice">(
+      wsId ? "invoice" : "card",
+    ),
     [promo, setPromo] = useState(""),
     [comment, setComment] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
@@ -118,7 +138,21 @@ export function OrderCreate() {
         ...(comment.trim() ? { comment: comment.trim() } : {}),
         ...(quote !== null ? { expected_total_minor: quote } : {}),
       };
-      const order = await api<Order>("/orders", body, { idem: attempt.key });
+      const order = wsId
+        ? await api<Order>(
+            "/wholesale/" + wsId + "/order",
+            {
+              lines: body.lines,
+              delivery: body.delivery,
+              payment,
+              recipient: recipient.trim(),
+              ...(comment.trim() ? { comment: comment.trim() } : {}),
+              ...(quote !== null ? { expected_total_minor: quote } : {}),
+            },
+            { idem: attempt.key },
+          )
+        : await api<Order>("/orders", body, { idem: attempt.key });
+      if (wsId) await qc.invalidateQueries({ queryKey: ["wholesale"] });
       attempt.renew();
       notify("Замовлення " + order.number + " створено");
       navigate("/orders/" + order.id);
@@ -140,8 +174,9 @@ export function OrderCreate() {
     }
   };
   const ready =
-    name.trim().length >= 2 &&
-    !!normalized &&
+    (wsId
+      ? !!wsReq && recipient.trim().length >= 2
+      : name.trim().length >= 2 && !!normalized) &&
     lines.length > 0 &&
     !!cityRef &&
     !!point;
@@ -151,7 +186,9 @@ export function OrderCreate() {
         <ArrowLeft size={16} aria-hidden="true" /> {t.nav.orders}
       </Link>
       <PageHead
-        title="Нове замовлення"
+        title={
+          wsReq ? "Замовлення із заявки " + wsReq.number : "Нове замовлення"
+        }
         text="Телефон, Instagram чи TikTok — ціну, знижки комплекту й промокоду рахує сервер."
       />
       <form
@@ -300,76 +337,105 @@ export function OrderCreate() {
         <div className="stack">
           <Panel title="Клієнт">
             <div className="panel-body stack">
-              <label className="field">
-                Телефон (+380…)
-                <input
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="off"
-                  required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  aria-invalid={!!phone && !normalized}
-                />
-              </label>
-              {phone && !normalized && (
-                <small className="muted">Формат: +380 XX XXX XX XX</small>
-              )}
-              {(dupes.data?.rows.length ?? 0) > 0 && (
-                <Note tone="info">
-                  Клієнт із цим номером уже є:{" "}
-                  {dupes.data!.rows.map((c) => (
-                    <Link
-                      key={c.id}
-                      className="link"
-                      to={"/customers/" + encodeURIComponent(c.id)}
-                    >
-                      {c.name || c.id}
-                    </Link>
-                  ))}
-                  . Замовлення буде прив’язане до кабінету лише після входу
-                  клієнта з цим номером через SMS.
-                </Note>
-              )}
-              <label className="field">
-                Ім’я та прізвище
-                <input
-                  required
-                  minLength={2}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                Отримувач (якщо інша людина)
-                <input
-                  value={recipient}
-                  onChange={(e) => setRecipient(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                Email (необов’язково)
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                Канал
-                <select
-                  value={channel}
-                  onChange={(e) => setChannel(e.target.value)}
-                >
-                  {(["phone", "instagram", "tiktok", "other"] as const).map(
-                    (c) => (
-                      <option key={c} value={c}>
-                        {t.channel[c]}
-                      </option>
-                    ),
+              {wsId ? (
+                <>
+                  <Note tone="info">
+                    {wsReq
+                      ? "Заявка " +
+                        wsReq.number +
+                        ": " +
+                        wsReq.name +
+                        ", " +
+                        (wsReq.phone_masked ?? "—") +
+                        ". Покупець і телефон беруться із заявки."
+                      : "Завантажуємо заявку…"}
+                  </Note>
+                  <label className="field">
+                    Ім’я та прізвище одержувача
+                    <input
+                      required
+                      minLength={2}
+                      value={recipient}
+                      onChange={(e) => setRecipient(e.target.value)}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    Телефон (+380…)
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="off"
+                      required
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      aria-invalid={!!phone && !normalized}
+                    />
+                  </label>
+                  {phone && !normalized && (
+                    <small className="muted">Формат: +380 XX XXX XX XX</small>
                   )}
-                </select>
-              </label>
+                  {(dupes.data?.rows.length ?? 0) > 0 && (
+                    <Note tone="info">
+                      Клієнт із цим номером уже є:{" "}
+                      {dupes.data!.rows.map((c) => (
+                        <Link
+                          key={c.id}
+                          className="link"
+                          to={"/customers/" + encodeURIComponent(c.id)}
+                        >
+                          {c.name || c.id}
+                        </Link>
+                      ))}
+                      . Замовлення буде прив’язане до кабінету лише після входу
+                      клієнта з цим номером через SMS.
+                    </Note>
+                  )}
+                  <label className="field">
+                    Ім’я та прізвище
+                    <input
+                      required
+                      minLength={2}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    Отримувач (якщо інша людина)
+                    <input
+                      value={recipient}
+                      onChange={(e) => setRecipient(e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    Email (необов’язково)
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+              {!wsId && (
+                <label className="field">
+                  Канал
+                  <select
+                    value={channel}
+                    onChange={(e) => setChannel(e.target.value)}
+                  >
+                    {(["phone", "instagram", "tiktok", "other"] as const).map(
+                      (c) => (
+                        <option key={c} value={c}>
+                          {t.channel[c]}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+              )}
               <label className="field">
                 Оплата
                 <select
@@ -383,16 +449,18 @@ export function OrderCreate() {
                   <option value="invoice">Рахунок ФОП</option>
                 </select>
               </label>
-              <label className="field">
-                Промокод
-                <input
-                  value={promo}
-                  onChange={(e) => {
-                    setPromo(e.target.value);
-                    changed();
-                  }}
-                />
-              </label>
+              {!wsId && (
+                <label className="field">
+                  Промокод
+                  <input
+                    value={promo}
+                    onChange={(e) => {
+                      setPromo(e.target.value);
+                      changed();
+                    }}
+                  />
+                </label>
+              )}
               <label className="field">
                 Коментар до замовлення
                 <textarea
