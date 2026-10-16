@@ -109,7 +109,7 @@ export async function api<T>(
   );
 }
 
-/** Download a CSV export (same session); returns false when the server refused. */
+/** Download a file the Staff API serves (CSV exports, the invoice PDF) in the same session; throws ApiError when refused. */
 export async function download(
   path: string,
   body?: unknown,

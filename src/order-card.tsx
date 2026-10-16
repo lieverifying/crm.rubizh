@@ -138,6 +138,7 @@ export function OrderCard() {
   const client = useQueryClient();
   const can = useCan();
   const { notify } = useWorkspace();
+  const [pdfBusy, setPdfBusy] = useState(false);
   const q = useQuery({
     queryKey: ["order", Number(id)],
     queryFn: ({ signal }) => api<Card>("/orders/" + id, undefined, { signal }),
@@ -285,14 +286,18 @@ export function OrderCard() {
         {o.invoice_pdf?.available && (
           <button
             className="btn"
-            onClick={() =>
-              download("/orders/" + o.id + "/invoice-pdf").catch((e) =>
-                notify(
-                  e instanceof ApiError ? e.message : t.serviceUnavailable,
-                  "error",
-                ),
-              )
-            }
+            disabled={pdfBusy}
+            onClick={() => {
+              setPdfBusy(true);
+              download("/orders/" + o.id + "/invoice-pdf")
+                .catch((e) =>
+                  notify(
+                    e instanceof ApiError ? e.message : t.serviceUnavailable,
+                    "error",
+                  ),
+                )
+                .finally(() => setPdfBusy(false));
+            }}
           >
             <Download size={16} aria-hidden="true" /> Завантажити рахунок (PDF)
           </button>

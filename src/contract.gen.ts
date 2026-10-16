@@ -698,7 +698,7 @@ export type Pdf = string;
 
 export type InvoicePdfState = {
   available: boolean;
-  reason?: null | "NOT_INVOICE" | "NOT_READY" | "CANCELLED" | "VAT_NOTE_MISSING";
+  reason?: null | "NOT_INVOICE" | "NOT_READY" | "CANCELLED" | "VAT_NOTE_MISSING" | "ERROR";
   message?: string;
 };
 
