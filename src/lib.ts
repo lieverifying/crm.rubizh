@@ -32,6 +32,29 @@ type Options = {
 };
 
 /**
+ * CRM-5.1 (stage 5): while the page is being left, no new Staff API read starts. WebKit reports a load started during
+ * the teardown of the old page as an error («… due to access control checks»), even when it is handled. A navigation
+ * that does not happen (a download) resumes after 3 s; a page restored from the back/forward cache resumes at once.
+ */
+let leaving = false;
+let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+export function setLeaving(value: boolean): void {
+  leaving = value;
+  clearTimeout(resumeTimer);
+  if (value) resumeTimer = setTimeout(() => setLeaving(false), 3000);
+  for (const listener of leavingListeners) listener(value);
+}
+const leavingListeners = new Set<(leaving: boolean) => void>();
+export function onLeaving(listener: (leaving: boolean) => void): void {
+  leavingListeners.add(listener);
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => setLeaving(true));
+  window.addEventListener("pagehide", () => setLeaving(true));
+  window.addEventListener("pageshow", () => setLeaving(false));
+}
+
+/**
  * One request to /api/staff. Mutations carry the CSRF token and the per-attempt Idempotency-Key.
  * STEP_UP_REQUIRED opens the re-entry dialog and repeats the same attempt (same key) once.
  */
@@ -41,6 +64,8 @@ export async function api<T>(
   opts: Options = {},
 ): Promise<T> {
   const method = opts.method ?? (body === undefined ? "GET" : "POST");
+  if (leaving && method === "GET")
+    throw new DOMException("The page is being left", "AbortError");
   let response: Response;
   try {
     response = await fetch("/api/staff" + path, {
