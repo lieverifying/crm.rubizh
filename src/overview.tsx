@@ -5,6 +5,8 @@ import type {
   Analytics as AnalyticsT,
   Dashboard,
   OrderSummary,
+  SiteSpeed,
+  SpeedWindow,
 } from "./contract.gen";
 import { api, date, money, params, shortDate, useCan } from "./lib";
 import {
@@ -391,6 +393,7 @@ const actionNames: Record<string, string> = {
 export const actionText = (a: string) => actionNames[a] ?? a;
 
 export function Analytics() {
+  const can = useCan();
   const p = usePeriod("30d");
   const a = useQuery({
     queryKey: ["analytics", p.query],
@@ -518,6 +521,151 @@ export function Analytics() {
           </div>
         </div>
       )}
+      {can("site.speed.view") && <SpeedPanel />}
+    </>
+  );
+}
+
+// D-72: anonymous real-user metrics (SITE shop/analytics.php), OWNER only.
+const SPEED_TEMPLATES = [
+  ["home", "Головна"],
+  ["catalog", "Каталог"],
+  ["category", "Категорія"],
+  ["product", "Товар"],
+  ["kit", "Комплект"],
+] as const;
+const SPEED_METRICS = ["LCP", "CLS", "INP"] as const;
+const SPEED_DEVICES = [
+  ["mobile", "мобільний"],
+  ["desktop", "комп’ютер"],
+] as const;
+type SpeedRow = SiteSpeed["rows"][number];
+
+function speedValue(metric: SpeedRow["metric"], v: number | null) {
+  if (v === null) return "—";
+  if (metric === "CLS")
+    return v.toLocaleString("uk-UA", { maximumFractionDigits: 3 });
+  if (metric === "LCP")
+    return (
+      (v / 1000).toLocaleString("uk-UA", { maximumFractionDigits: 2 }) + " с"
+    );
+  return Math.round(v).toLocaleString("uk-UA") + " мс";
+}
+
+function SpeedCells({ row, w }: { row: SpeedRow; w: SpeedWindow }) {
+  return (
+    <>
+      <td>{speedValue(row.metric, w.median)}</td>
+      <td>{speedValue(row.metric, w.p75)}</td>
+      <td>{w.n}</td>
+    </>
+  );
+}
+
+export function SpeedPanel() {
+  const q = useQuery({
+    queryKey: ["site-speed"],
+    queryFn: ({ signal }) =>
+      api<SiteSpeed>("/site-speed", undefined, { signal }),
+  });
+  const find = (t: string, m: string, d: string) =>
+    q.data?.rows.find(
+      (r) => r.template === t && r.metric === m && r.device === d,
+    );
+  return (
+    <Panel title="Швидкість сайту" className="speed-panel">
+      <div className="panel-body">
+        <p className="muted">
+          Реальні виміри відвідувачів, анонімно: шаблон сторінки, значення, тип
+          пристрою. «Добре»: LCP ≤ 2,5 с, INP ≤ 200 мс, CLS ≤ 0,1 (за p75).
+        </p>
+        {q.isPending ? (
+          <Loading rows={4} />
+        ) : q.isError ? (
+          <ErrorBox error={q.error} onRetry={() => void q.refetch()} />
+        ) : (
+          <div
+            className="speed-wrap"
+            role="region"
+            aria-label="Таблиця швидкості сайту (прокручується)"
+            tabIndex={0}
+          >
+            <table className="data speed">
+              <caption className="sr-only">
+                Швидкість сайту: медіана та p75 за 7 і 28 днів за шаблонами
+                сторінок і пристроями; n — кількість вимірів
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" rowSpan={2}>
+                    Шаблон
+                  </th>
+                  <th scope="col" rowSpan={2}>
+                    Метрика
+                  </th>
+                  <th scope="col" rowSpan={2}>
+                    Пристрій
+                  </th>
+                  <th scope="colgroup" colSpan={3}>
+                    7 днів
+                  </th>
+                  <th scope="colgroup" colSpan={3}>
+                    28 днів
+                  </th>
+                </tr>
+                <tr>
+                  {[7, 28].map((d) => (
+                    <SpeedHeads key={d} />
+                  ))}
+                </tr>
+              </thead>
+              {SPEED_TEMPLATES.map(([t, label]) => (
+                <tbody key={t}>
+                  {SPEED_METRICS.flatMap((m, mi) =>
+                    SPEED_DEVICES.map(([d, device], di) => {
+                      const row = find(t, m, d);
+                      return (
+                        <tr key={m + d}>
+                          {mi === 0 && di === 0 && (
+                            <th
+                              scope="rowgroup"
+                              rowSpan={
+                                SPEED_METRICS.length * SPEED_DEVICES.length
+                              }
+                            >
+                              {label}
+                            </th>
+                          )}
+                          <td>{m}</td>
+                          <td>{device}</td>
+                          {row ? (
+                            <>
+                              <SpeedCells row={row} w={row.d7} />
+                              <SpeedCells row={row} w={row.d28} />
+                            </>
+                          ) : (
+                            <td colSpan={6}>—</td>
+                          )}
+                        </tr>
+                      );
+                    }),
+                  )}
+                </tbody>
+              ))}
+            </table>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function SpeedHeads() {
+  return (
+    <>
+      <th scope="col">Медіана</th>
+      <th scope="col">p75</th>
+      <th scope="col">n</th>
     </>
   );
 }

@@ -671,6 +671,24 @@ table.data td small,
 .cards {
   display: none;
 }
+/* D-72 speed table: scrolls inside its panel on every width (no card view). */
+.speed-panel {
+  min-width: 0;
+  margin-top: var(--gap);
+}
+.speed-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+table.data.speed th[scope="rowgroup"] {
+  vertical-align: top;
+  background: none;
+  color: var(--text);
+}
+table.data.speed td {
+  white-space: nowrap;
+  padding: 8px 12px;
+}
 .mcard {
   display: grid;
   gap: 8px;
