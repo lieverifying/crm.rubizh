@@ -103,6 +103,7 @@ export const t = {
     problem: "Позначити проблему",
     packing: "Передати в комплектацію",
     shipment: "Створити відправлення",
+    manual_ttn: "Внести ТТН вручну",
     complete: "Завершити",
     delivery_edit: "Виправити адресу",
     line_supplier: "Призначити постачальника",

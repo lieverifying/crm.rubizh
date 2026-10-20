@@ -332,6 +332,17 @@ export type Note = {
   created_at: string;
 };
 
+export type ManualTtnRequest = {
+  tracking_number: string;
+  lines: {
+      line_no: number;
+      qty: number;
+    }[];
+  availability_confirmed?: boolean;
+  extra_delivery_agreed?: boolean;
+  expected_version?: Version;
+};
+
 export type ShipmentDraftRequest = {
   supplier_code: string;
   lines: {
@@ -815,6 +826,7 @@ export const ROUTES = {
   "orders.delivery": { id: "orders.delivery", method: "POST", path: "/orders/{id}/delivery", permission: "order.delivery.edit", stepUp: false, version: true, idempotent: true, created: false },
   "orders.note": { id: "orders.note", method: "POST", path: "/orders/{id}/note", permission: "note.create", stepUp: false, version: false, idempotent: true, created: true },
   "orders.shipment.draft": { id: "orders.shipment.draft", method: "POST", path: "/orders/{id}/shipments", permission: "shipment.manage", stepUp: false, version: true, idempotent: true, created: true },
+  "orders.shipment.manual": { id: "orders.shipment.manual", method: "POST", path: "/orders/{id}/shipments/manual", permission: "shipment.manage", stepUp: false, version: true, idempotent: true, created: true },
   "orders.invoice.pdf": { id: "orders.invoice.pdf", method: "GET", path: "/orders/{id}/invoice-pdf", permission: "order.invoice.pdf", stepUp: false, version: false, idempotent: false, created: false },
   "orders.invoice.accept": { id: "orders.invoice.accept", method: "POST", path: "/orders/{id}/accept-invoice-payment", permission: "payment.invoice.accept", stepUp: true, version: true, idempotent: true, created: false },
   "orders.reconcile.not_created": { id: "orders.reconcile.not_created", method: "POST", path: "/orders/{id}/reconcile-not-created", permission: "payment.manual_reconcile", stepUp: true, version: true, idempotent: true, created: false },
@@ -920,6 +932,7 @@ export interface RouteTypes {
   "orders.delivery": { request: DeliveryRequest; response: Order; query: never };
   "orders.note": { request: NoteRequest; response: Note; query: never };
   "orders.shipment.draft": { request: ShipmentDraftRequest; response: Order; query: never };
+  "orders.shipment.manual": { request: ManualTtnRequest; response: Order; query: never };
   "orders.invoice.pdf": { request: never; response: Pdf; query: never };
   "orders.invoice.accept": { request: InvoiceAcceptRequest; response: Order; query: never };
   "orders.reconcile.not_created": { request: ReasonRequest; response: Order; query: never };

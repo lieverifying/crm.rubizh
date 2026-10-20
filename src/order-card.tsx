@@ -249,6 +249,7 @@ export function OrderCard() {
           "accept_invoice",
           "packing",
           "shipment",
+          "manual_ttn",
           "complete",
           "delivery_edit",
           "return",
@@ -469,14 +470,27 @@ export function OrderCard() {
           <Panel
             title="Посилки"
             meta={
-              has("shipment") ? (
-                <button
-                  className="btn small"
-                  disabled={busy}
-                  onClick={() => open("shipment")}
-                >
-                  {t.actions.shipment}
-                </button>
+              has("shipment") || has("manual_ttn") ? (
+                <span className="row">
+                  {has("shipment") && (
+                    <button
+                      className="btn small"
+                      disabled={busy}
+                      onClick={() => open("shipment")}
+                    >
+                      {t.actions.shipment}
+                    </button>
+                  )}
+                  {has("manual_ttn") && (
+                    <button
+                      className="btn small"
+                      disabled={busy}
+                      onClick={() => open("manual_ttn")}
+                    >
+                      {t.actions.manual_ttn}
+                    </button>
+                  )}
+                </span>
               ) : undefined
             }
           >
@@ -932,6 +946,8 @@ function OrderDialogs({
       );
     case "shipment":
       return <ShipmentDialog o={o} act={act} common={common} />;
+    case "manual_ttn":
+      return <ManualTtnDialog o={o} act={act} common={common} />;
     case "delivery_edit":
       return <DeliveryDialog o={o} act={act} common={common} />;
     case "return":
@@ -1401,6 +1417,140 @@ function InvoiceDialog({
         Сервер перевірить склад, ціну та строк оплати. Якщо відкритий рахунок
         уже є — повернеться той самий (без подвійної оплати).
       </p>
+    </ActionDialog>
+  );
+}
+
+/** Stage 5.6-2 (D-83): a TTN created outside CRM (dropshipping: the supplier's or the owner's own NP cabinet). */
+const TTN_PATTERN = /^[1-9][0-9]{13}$/;
+const ttnDigits = (v: string) => v.replace(/[\s-]+/g, "");
+function ManualTtnDialog({
+  o,
+  act,
+  common,
+}: {
+  o: Card;
+  act: Act;
+  common: Common;
+}) {
+  const codes = Array.from(
+    new Set(
+      o.lines
+        .filter((l) => l.supplier_code && l.qty - l.in_parcels > 0)
+        .map((l) => l.supplier_code),
+    ),
+  );
+  const [supplier, setSupplier] = useState(codes[0] ?? ""),
+    [qty, setQty] = useState<Record<number, string>>({}),
+    [number, setNumber] = useState(""),
+    [available, setAvailable] = useState(false),
+    [extra, setExtra] = useState(false);
+  const lines = o.lines.filter(
+    (l) => l.supplier_code === supplier && l.qty - l.in_parcels > 0,
+  );
+  const digits = ttnDigits(number);
+  const invalid = number !== "" && !TTN_PATTERN.test(digits);
+  return (
+    <ActionDialog
+      {...common}
+      wide
+      title={t.actions.manual_ttn}
+      submitText="Зберегти ТТН"
+      onSubmit={({ key }) =>
+        act(
+          "/orders/" + o.id + "/shipments/manual",
+          {
+            tracking_number: digits,
+            availability_confirmed: available,
+            extra_delivery_agreed: extra,
+            lines: lines
+              .map((l) => ({
+                line_no: l.line_no,
+                qty: Number(qty[l.line_no] ?? l.qty - l.in_parcels),
+              }))
+              .filter((x) => x.qty > 0),
+          },
+          key,
+          "ТТН збережено",
+        )
+      }
+    >
+      <p className="muted">
+        Для ТТН, створеної поза CRM: у кабінеті Нової пошти постачальника або
+        власника. Статус доставки підтягується автоматично; покупець бачить
+        номер у кабінеті.
+      </p>
+      <label className="field">
+        Номер ТТН (14 цифр)
+        <input
+          inputMode="numeric"
+          autoComplete="off"
+          required
+          aria-invalid={invalid}
+          aria-describedby="manual-ttn-help"
+          value={number}
+          onChange={(e) => setNumber(e.target.value)}
+        />
+      </label>
+      <p
+        id="manual-ttn-help"
+        className={invalid ? "finance-bad" : "muted"}
+        role={invalid ? "alert" : undefined}
+      >
+        {invalid
+          ? "ТТН Нової пошти — 14 цифр, наприклад 20450123456789."
+          : "Одна ТТН — одна посилка. Для кількох посилок внесіть кожну ТТН окремо."}
+      </p>
+      {codes.length > 1 && (
+        <label className="field">
+          Постачальник посилки
+          <select
+            value={supplier}
+            onChange={(e) => setSupplier(e.target.value)}
+          >
+            {codes.map((c) => (
+              <option key={c} value={c}>
+                {o.lines.find((l) => l.supplier_code === c)?.supplier_name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {lines.map((l) => (
+        <label className="field" key={l.line_no}>
+          {l.name} · {l.sku} (у цій посилці, залишилось{" "}
+          {Math.max(0, l.qty - l.in_parcels)})
+          <input
+            type="number"
+            min="0"
+            step="1"
+            max={l.qty - l.in_parcels}
+            value={qty[l.line_no] ?? String(Math.max(0, l.qty - l.in_parcels))}
+            onChange={(e) =>
+              setQty((v) => ({ ...v, [l.line_no]: e.target.value }))
+            }
+          />
+        </label>
+      ))}
+      <label className="check">
+        <input
+          type="checkbox"
+          required
+          checked={available}
+          onChange={(e) => setAvailable(e.target.checked)}
+        />{" "}
+        Фактичну наявність і комплектацію перевірено
+      </label>
+      {(codes.length > 1 || o.parcels.length > 0) && (
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={extra}
+            onChange={(e) => setExtra(e.target.checked)}
+          />{" "}
+          Окремі посилки погоджено з клієнтом
+        </label>
+      )}
     </ActionDialog>
   );
 }
