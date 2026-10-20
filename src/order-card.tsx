@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1421,9 +1421,9 @@ function InvoiceDialog({
   );
 }
 
-/** Stage 5.6-2 (D-83): a TTN created outside CRM (dropshipping: the supplier's or the owner's own NP cabinet). */
 const TTN_PATTERN = /^[1-9][0-9]{13}$/;
 const ttnDigits = (v: string) => v.replace(/[\s-]+/g, "");
+/** Stage 5.6-2 (D-83): a TTN created outside CRM (dropshipping: the supplier's or the owner's own NP cabinet). */
 function ManualTtnDialog({
   o,
   act,
@@ -1448,6 +1448,17 @@ function ManualTtnDialog({
   const lines = o.lines.filter(
     (l) => l.supplier_code === supplier && l.qty - l.in_parcels > 0,
   );
+  const helpId = useId();
+  const left = (l: Card["lines"][number]) => Math.max(0, l.qty - l.in_parcels);
+  const payload = lines
+    .map((l) => ({
+      line_no: l.line_no,
+      qty: Math.min(
+        left(l),
+        Math.max(0, Number(qty[l.line_no] ?? left(l)) || 0),
+      ),
+    }))
+    .filter((x) => x.qty > 0);
   const digits = ttnDigits(number);
   const invalid = number !== "" && !TTN_PATTERN.test(digits);
   return (
@@ -1456,6 +1467,7 @@ function ManualTtnDialog({
       wide
       title={t.actions.manual_ttn}
       submitText="Зберегти ТТН"
+      disabled={invalid || digits === "" || payload.length === 0}
       onSubmit={({ key }) =>
         act(
           "/orders/" + o.id + "/shipments/manual",
@@ -1463,12 +1475,7 @@ function ManualTtnDialog({
             tracking_number: digits,
             availability_confirmed: available,
             extra_delivery_agreed: extra,
-            lines: lines
-              .map((l) => ({
-                line_no: l.line_no,
-                qty: Number(qty[l.line_no] ?? l.qty - l.in_parcels),
-              }))
-              .filter((x) => x.qty > 0),
+            lines: payload,
           },
           key,
           "ТТН збережено",
@@ -1487,15 +1494,16 @@ function ManualTtnDialog({
           autoComplete="off"
           required
           aria-invalid={invalid}
-          aria-describedby="manual-ttn-help"
+          aria-describedby={helpId}
+          maxLength={40}
           value={number}
           onChange={(e) => setNumber(e.target.value)}
         />
       </label>
       <p
-        id="manual-ttn-help"
-        className={invalid ? "finance-bad" : "muted"}
-        role={invalid ? "alert" : undefined}
+        id={helpId}
+        className={invalid ? "note-box bad" : "muted"}
+        aria-live="polite"
       >
         {invalid
           ? "ТТН Нової пошти — 14 цифр, наприклад 20450123456789."
@@ -1510,22 +1518,26 @@ function ManualTtnDialog({
           >
             {codes.map((c) => (
               <option key={c} value={c}>
-                {o.lines.find((l) => l.supplier_code === c)?.supplier_name}
+                {o.lines.find((l) => l.supplier_code === c)?.supplier_name ?? c}
               </option>
             ))}
           </select>
         </label>
       )}
+      {payload.length === 0 && (
+        <p className="note-box bad">
+          Вкажіть кількість хоча б для однієї позиції.
+        </p>
+      )}
       {lines.map((l) => (
         <label className="field" key={l.line_no}>
-          {l.name} · {l.sku} (у цій посилці, залишилось{" "}
-          {Math.max(0, l.qty - l.in_parcels)})
+          {l.name} · {l.sku} (у цій посилці, залишилось {left(l)})
           <input
             type="number"
             min="0"
             step="1"
-            max={l.qty - l.in_parcels}
-            value={qty[l.line_no] ?? String(Math.max(0, l.qty - l.in_parcels))}
+            max={left(l)}
+            value={qty[l.line_no] ?? String(left(l))}
             onChange={(e) =>
               setQty((v) => ({ ...v, [l.line_no]: e.target.value }))
             }
