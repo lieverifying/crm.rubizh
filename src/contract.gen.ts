@@ -701,6 +701,11 @@ export type SiteSpeed = {
     }[];
 };
 
+export type PimConnection = {
+  api_url: string;
+  pim_key: string;
+};
+
 export type Report = {
   period: Record<string, unknown>;
   metrics: Record<string, unknown>;
@@ -882,6 +887,7 @@ export const ROUTES = {
   "audit.list": { id: "audit.list", method: "GET", path: "/audit", permission: "audit.view", stepUp: false, version: false, idempotent: false, created: false },
   "analytics": { id: "analytics", method: "GET", path: "/analytics", permission: "report.view", stepUp: false, version: false, idempotent: false, created: false },
   "site.speed": { id: "site.speed", method: "GET", path: "/site-speed", permission: "site.speed.view", stepUp: false, version: false, idempotent: false, created: false },
+  "pim.connection": { id: "pim.connection", method: "GET", path: "/pim/connection", permission: "settings.system", stepUp: false, version: false, idempotent: false, created: false },
   "reports.legacy": { id: "reports.legacy", method: "GET", path: "/reports", permission: "dashboard.view", stepUp: false, version: false, idempotent: false, created: false },
   "settings.view": { id: "settings.view", method: "GET", path: "/settings", permission: "settings.personal", stepUp: false, version: false, idempotent: false, created: false },
   "settings.system": { id: "settings.system", method: "POST", path: "/settings/system", permission: "settings.system", stepUp: false, version: false, idempotent: true, created: false },
@@ -988,6 +994,7 @@ export interface RouteTypes {
   "audit.list": { request: never; response: AuditList; query: AuditQuery };
   "analytics": { request: never; response: Analytics; query: PeriodQuery };
   "site.speed": { request: never; response: SiteSpeed; query: never };
+  "pim.connection": { request: never; response: PimConnection; query: never };
   "reports.legacy": { request: never; response: Report; query: PeriodQuery };
   "settings.view": { request: never; response: Settings; query: never };
   "settings.system": { request: SystemSettingsRequest; response: Settings; query: never };
